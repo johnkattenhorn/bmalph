@@ -91,9 +91,15 @@ export interface TransitionOptions {
   force?: boolean;
 }
 
+export interface GeneratedFile {
+  path: string;
+  action: "created" | "updated";
+}
+
 export interface TransitionResult {
   storiesCount: number;
   warnings: string[];
   fixPlanPreserved: boolean;
   preflightIssues?: PreflightIssue[];
+  generatedFiles: GeneratedFile[];
 }

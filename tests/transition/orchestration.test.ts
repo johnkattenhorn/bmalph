@@ -162,6 +162,67 @@ describe("orchestration", () => {
     });
   });
 
+  describe("generated files tracking", () => {
+    it("returns generatedFiles with correct actions", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+
+      const result = await runTransition(testDir);
+
+      expect(result.generatedFiles).toBeDefined();
+      expect(result.generatedFiles.length).toBeGreaterThan(0);
+      const paths = result.generatedFiles.map((f) => f.path);
+      expect(paths).toContain(".ralph/@fix_plan.md");
+      expect(paths).toContain(".ralph/PROMPT.md");
+      expect(paths).toContain(".ralph/specs/");
+    });
+
+    it("marks files as created on first run", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+
+      const result = await runTransition(testDir);
+
+      const fixPlanEntry = result.generatedFiles.find((f) => f.path === ".ralph/@fix_plan.md");
+      expect(fixPlanEntry).toBeDefined();
+      expect(fixPlanEntry!.action).toBe("created");
+
+      const projectContextEntry = result.generatedFiles.find(
+        (f) => f.path === ".ralph/PROJECT_CONTEXT.md"
+      );
+      expect(projectContextEntry).toBeDefined();
+      expect(projectContextEntry!.action).toBe("created");
+
+      const promptEntry = result.generatedFiles.find((f) => f.path === ".ralph/PROMPT.md");
+      expect(promptEntry).toBeDefined();
+      expect(promptEntry!.action).toBe("created");
+    });
+
+    it("marks fix_plan as updated on re-run", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+
+      // First run creates the fix_plan
+      await runTransition(testDir);
+
+      // Second run should mark it as updated
+      const result = await runTransition(testDir);
+
+      const fixPlanEntry = result.generatedFiles.find((f) => f.path === ".ralph/@fix_plan.md");
+      expect(fixPlanEntry).toBeDefined();
+      expect(fixPlanEntry!.action).toBe("updated");
+    });
+  });
+
   describe("stale file cleanup", () => {
     it("removes stale files from .ralph/specs/ on re-transition", async () => {
       // First transition: copy artifact to specs

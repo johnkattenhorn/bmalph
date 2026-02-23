@@ -2,10 +2,10 @@ import { readFile, readdir, cp, mkdir, access, rm, rename } from "fs/promises";
 import { join } from "path";
 import { debug, info, warn } from "../utils/logger.js";
 import { isEnoent, formatError } from "../utils/errors.js";
-import { atomicWriteFile } from "../utils/file-system.js";
+import { atomicWriteFile, exists } from "../utils/file-system.js";
 import { readConfig } from "../utils/config.js";
 import { readState, writeState, type BmalphState } from "../utils/state.js";
-import type { TransitionResult, TransitionOptions } from "./types.js";
+import type { TransitionResult, TransitionOptions, GeneratedFile } from "./types.js";
 import { parseStoriesWithWarnings } from "./story-parsing.js";
 import {
   generateFixPlan,
@@ -102,10 +102,14 @@ export async function runTransition(
     }
   }
 
+  // Track generated files for summary output
+  const generatedFiles: GeneratedFile[] = [];
+
   // Check existing fix_plan for completed items (smart merge)
   let completedIds = new Set<string>();
   let existingItems: { id: string; completed: boolean; title?: string }[] = [];
   const fixPlanPath = join(projectDir, ".ralph/@fix_plan.md");
+  const fixPlanExisted = await exists(fixPlanPath);
   try {
     const existingFixPlan = await readFile(fixPlanPath, "utf-8");
     existingItems = parseFixPlan(existingFixPlan);
@@ -137,6 +141,10 @@ export async function runTransition(
   const newFixPlan = generateFixPlan(stories, storiesFile);
   const mergedFixPlan = mergeFixPlanProgress(newFixPlan, completedIds);
   await atomicWriteFile(fixPlanPath, mergedFixPlan);
+  generatedFiles.push({
+    path: ".ralph/@fix_plan.md",
+    action: fixPlanExisted ? "updated" : "created",
+  });
 
   // Track whether progress was preserved for return value
   const fixPlanPreserved = completedIds.size > 0;
@@ -150,6 +158,7 @@ export async function runTransition(
     if (changes.length > 0) {
       const changelog = formatChangelog(changes, new Date().toISOString());
       await atomicWriteFile(join(projectDir, ".ralph/SPECS_CHANGELOG.md"), changelog);
+      generatedFiles.push({ path: ".ralph/SPECS_CHANGELOG.md", action: "updated" });
       debug(`Generated SPECS_CHANGELOG.md with ${changes.length} changes`);
     }
   } catch (err) {
@@ -184,6 +193,7 @@ export async function runTransition(
     await access(specsTmpDir);
     await rm(specsDir, { recursive: true, force: true });
     await rename(specsTmpDir, specsDir);
+    generatedFiles.push({ path: ".ralph/specs/", action: "updated" });
     debug("Copied _bmad-output/ to .ralph/specs/ (atomic)");
   } else {
     // Fall back to just artifactsDir if _bmad-output root doesn't exist
@@ -198,17 +208,21 @@ export async function runTransition(
     await access(specsTmpDir);
     await rm(specsDir, { recursive: true, force: true });
     await rename(specsTmpDir, specsDir);
+    generatedFiles.push({ path: ".ralph/specs/", action: "updated" });
   }
 
   // Generate SPECS_INDEX.md for intelligent spec reading
   info("Generating SPECS_INDEX.md...");
+  const specsIndexPath = join(projectDir, ".ralph/SPECS_INDEX.md");
+  const specsIndexExisted = await exists(specsIndexPath);
   try {
     const specsIndex = await generateSpecsIndex(specsDir);
     if (specsIndex.totalFiles > 0) {
-      await atomicWriteFile(
-        join(projectDir, ".ralph/SPECS_INDEX.md"),
-        formatSpecsIndexMd(specsIndex)
-      );
+      await atomicWriteFile(specsIndexPath, formatSpecsIndexMd(specsIndex));
+      generatedFiles.push({
+        path: ".ralph/SPECS_INDEX.md",
+        action: specsIndexExisted ? "updated" : "created",
+      });
       debug(`Generated SPECS_INDEX.md with ${specsIndex.totalFiles} files`);
     }
   } catch (err) {
@@ -228,6 +242,8 @@ export async function runTransition(
 
   // Extract project context for both PROJECT_CONTEXT.md and PROMPT.md
   info("Generating PROJECT_CONTEXT.md...");
+  const projectContextPath = join(projectDir, ".ralph/PROJECT_CONTEXT.md");
+  const projectContextExisted = await exists(projectContextPath);
   let projectContext = null;
   let truncationWarnings: string[] = [];
   if (artifactContents.size > 0) {
@@ -235,7 +251,11 @@ export async function runTransition(
     projectContext = context;
     truncationWarnings = detectTruncation(truncated);
     const contextMd = generateProjectContextMd(projectContext, projectName);
-    await atomicWriteFile(join(projectDir, ".ralph/PROJECT_CONTEXT.md"), contextMd);
+    await atomicWriteFile(projectContextPath, contextMd);
+    generatedFiles.push({
+      path: ".ralph/PROJECT_CONTEXT.md",
+      action: projectContextExisted ? "updated" : "created",
+    });
     debug("Generated PROJECT_CONTEXT.md");
   }
 
@@ -243,8 +263,10 @@ export async function runTransition(
   info("Generating PROMPT.md...");
   // Try to preserve rich PROMPT.md template if it has the placeholder
   let prompt: string;
+  let promptExisted = false;
   try {
     const existingPrompt = await readFile(join(projectDir, ".ralph/PROMPT.md"), "utf-8");
+    promptExisted = true;
     if (existingPrompt.includes("[YOUR PROJECT NAME]")) {
       prompt = existingPrompt.replace(/\[YOUR PROJECT NAME\]/g, projectName);
     } else {
@@ -260,6 +282,7 @@ export async function runTransition(
     prompt = generatePrompt(projectName, projectContext ?? undefined);
   }
   await atomicWriteFile(join(projectDir, ".ralph/PROMPT.md"), prompt);
+  generatedFiles.push({ path: ".ralph/PROMPT.md", action: promptExisted ? "updated" : "created" });
 
   // Customize @AGENT.md based on detected tech stack from architecture
   const architectureFile = files.find((f) => /architect/i.test(f));
@@ -273,6 +296,7 @@ export async function runTransition(
           const agentTemplate = await readFile(agentPath, "utf-8");
           const customized = customizeAgentMd(agentTemplate, stack);
           await atomicWriteFile(agentPath, customized);
+          generatedFiles.push({ path: ".ralph/@AGENT.md", action: "updated" });
           debug("Customized @AGENT.md with detected tech stack");
         }
       } catch (err) {
@@ -319,5 +343,6 @@ export async function runTransition(
     warnings,
     fixPlanPreserved,
     preflightIssues: preflightResult.issues,
+    generatedFiles,
   };
 }

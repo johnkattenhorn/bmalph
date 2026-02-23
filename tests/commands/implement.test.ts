@@ -4,6 +4,11 @@ import type { TransitionResult } from "../../src/transition/types.js";
 
 vi.mock("chalk");
 
+const mockAccess = vi.fn();
+vi.mock("fs/promises", () => ({
+  access: mockAccess,
+}));
+
 vi.mock("../../src/transition/orchestration.js", () => ({
   runTransition: vi.fn(),
 }));
@@ -31,6 +36,7 @@ function mockTransitionResult(overrides?: Partial<TransitionResult>): Transition
     storiesCount: 3,
     warnings: [],
     fixPlanPreserved: false,
+    generatedFiles: [],
     ...overrides,
   };
 }
@@ -47,6 +53,8 @@ describe("implement command", () => {
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     originalExitCode = process.exitCode;
     process.exitCode = undefined;
+    // Default: fix_plan does not exist (first run)
+    mockAccess.mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
   });
 
   afterEach(() => {
@@ -266,6 +274,89 @@ describe("implement command", () => {
       const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("full-tier platform");
       expect(output).toContain("Cursor");
+    });
+  });
+
+  describe("generated files summary", () => {
+    it("displays generated files with action icons", async () => {
+      const { runTransition } = await import("../../src/transition/orchestration.js");
+      const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");
+      vi.mocked(resolveProjectPlatform).mockResolvedValue(mockPlatform());
+      vi.mocked(runTransition).mockResolvedValue(
+        mockTransitionResult({
+          generatedFiles: [
+            { path: ".ralph/@fix_plan.md", action: "created" },
+            { path: ".ralph/PROMPT.md", action: "updated" },
+            { path: ".ralph/specs/", action: "updated" },
+          ],
+        })
+      );
+
+      const { implementCommand } = await import("../../src/commands/implement.js");
+      await implementCommand({ projectDir: "/test/project" });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Generated files");
+      expect(output).toContain("+ .ralph/@fix_plan.md");
+      expect(output).toContain("~ .ralph/PROMPT.md");
+      expect(output).toContain("~ .ralph/specs/");
+    });
+
+    it("skips generated files section when list is empty", async () => {
+      const { runTransition } = await import("../../src/transition/orchestration.js");
+      const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");
+      vi.mocked(resolveProjectPlatform).mockResolvedValue(mockPlatform());
+      vi.mocked(runTransition).mockResolvedValue(mockTransitionResult({ generatedFiles: [] }));
+
+      const { implementCommand } = await import("../../src/commands/implement.js");
+      await implementCommand({ projectDir: "/test/project" });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("Generated files");
+    });
+  });
+
+  describe("re-run protection", () => {
+    it("blocks re-run when fix_plan exists and --force not set", async () => {
+      mockAccess.mockResolvedValue(undefined); // fix_plan exists
+      const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");
+      vi.mocked(resolveProjectPlatform).mockResolvedValue(mockPlatform());
+
+      const { implementCommand } = await import("../../src/commands/implement.js");
+      await implementCommand({ projectDir: "/test/project" });
+
+      expect(process.exitCode).toBe(1);
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("already been run");
+      expect(output).toContain("--force");
+    });
+
+    it("--force bypasses re-run guard", async () => {
+      mockAccess.mockResolvedValue(undefined); // fix_plan exists
+      const { runTransition } = await import("../../src/transition/orchestration.js");
+      const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");
+      vi.mocked(resolveProjectPlatform).mockResolvedValue(mockPlatform());
+      vi.mocked(runTransition).mockResolvedValue(mockTransitionResult());
+
+      const { implementCommand } = await import("../../src/commands/implement.js");
+      await implementCommand({ projectDir: "/test/project", force: true });
+
+      expect(process.exitCode).toBeUndefined();
+      expect(runTransition).toHaveBeenCalled();
+    });
+
+    it("first run proceeds normally when fix_plan does not exist", async () => {
+      // mockAccess already defaults to ENOENT in beforeEach
+      const { runTransition } = await import("../../src/transition/orchestration.js");
+      const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");
+      vi.mocked(resolveProjectPlatform).mockResolvedValue(mockPlatform());
+      vi.mocked(runTransition).mockResolvedValue(mockTransitionResult());
+
+      const { implementCommand } = await import("../../src/commands/implement.js");
+      await implementCommand({ projectDir: "/test/project" });
+
+      expect(process.exitCode).toBeUndefined();
+      expect(runTransition).toHaveBeenCalled();
     });
   });
 

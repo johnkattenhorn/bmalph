@@ -1,4 +1,6 @@
 import chalk from "chalk";
+import { access } from "fs/promises";
+import { join } from "path";
 import { runTransition } from "../transition/orchestration.js";
 import { withErrorHandling } from "../utils/errors.js";
 import { resolveProjectPlatform } from "../platform/resolve.js";
@@ -15,6 +17,23 @@ export async function implementCommand(options: ImplementOptions): Promise<void>
 
 async function runImplement(options: ImplementOptions): Promise<void> {
   const { projectDir, force } = options;
+
+  // Re-run protection: warn if implement was already run
+  try {
+    await access(join(projectDir, ".ralph/@fix_plan.md"));
+    if (!force) {
+      console.log(chalk.yellow("Warning: bmalph implement has already been run."));
+      console.log(
+        "Re-running will overwrite PROMPT.md, PROJECT_CONTEXT.md, @AGENT.md, and SPECS_INDEX.md."
+      );
+      console.log("Fix plan progress will be preserved.\n");
+      console.log(`Use ${chalk.bold("--force")} to proceed anyway.`);
+      process.exitCode = 1;
+      return;
+    }
+  } catch {
+    // fix_plan doesn't exist — first run, proceed
+  }
 
   const platform = await resolveProjectPlatform(projectDir);
 
@@ -36,6 +55,16 @@ async function runImplement(options: ImplementOptions): Promise<void> {
   if (result.warnings.length > 0) {
     for (const warning of result.warnings) {
       console.log(chalk.yellow(`  ! ${warning}`));
+    }
+    console.log("");
+  }
+
+  // Generated files summary
+  if (result.generatedFiles.length > 0) {
+    console.log(chalk.bold("\nGenerated files\n"));
+    for (const file of result.generatedFiles) {
+      const icon = file.action === "created" ? chalk.green("+") : chalk.cyan("~");
+      console.log(`  ${icon} ${file.path}`);
     }
     console.log("");
   }

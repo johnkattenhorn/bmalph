@@ -77,15 +77,123 @@ describe("specs-index", () => {
       expect(detectSpecFileType("epic-brainstorm-stories.md", "content")).toBe("stories");
     });
 
-    it("returns 'other' for unrecognized filenames", () => {
-      expect(detectSpecFileType("notes.md", "content")).toBe("other");
-      expect(detectSpecFileType("random-doc.md", "content")).toBe("other");
-      expect(detectSpecFileType("meeting-notes.md", "content")).toBe("other");
+    it("returns 'other' for unrecognized filenames without matching content", () => {
+      expect(detectSpecFileType("notes.md", "Just some random notes")).toBe("other");
+      expect(detectSpecFileType("random-doc.md", "Nothing special here")).toBe("other");
+      expect(detectSpecFileType("meeting-notes.md", "Meeting discussion points")).toBe("other");
     });
 
     it("is case insensitive", () => {
       expect(detectSpecFileType("PRD.MD", "content")).toBe("prd");
       expect(detectSpecFileType("ARCHITECTURE.md", "content")).toBe("architecture");
+    });
+
+    it("falls back to content-based detection when filename is unrecognized", () => {
+      expect(
+        detectSpecFileType(
+          "requirements.md",
+          "# Requirements\n\n## Functional Requirements\n\n- User login\n- Dashboard"
+        )
+      ).toBe("prd");
+
+      expect(
+        detectSpecFileType(
+          "requirements.md",
+          "# Requirements\n\n## Executive Summary\n\nThis project aims to..."
+        )
+      ).toBe("prd");
+    });
+
+    it("detects architecture from content headings", () => {
+      expect(
+        detectSpecFileType(
+          "system-design.md",
+          "# System Design\n\n## Tech Stack\n\n- Node.js\n- PostgreSQL"
+        )
+      ).toBe("architecture");
+
+      expect(
+        detectSpecFileType(
+          "decisions.md",
+          "# Decisions\n\n## Architecture Decision Records\n\nADR-001: Use TypeScript"
+        )
+      ).toBe("architecture");
+    });
+
+    it("detects stories from content headings", () => {
+      expect(
+        detectSpecFileType(
+          "work-items.md",
+          "# Work Items\n\n### Story 1.1: User Login\n\nAs a user..."
+        )
+      ).toBe("stories");
+
+      expect(
+        detectSpecFileType("backlog.md", "# Backlog\n\n### Story 2.3: Dashboard\n\nAs an admin...")
+      ).toBe("stories");
+    });
+
+    it("detects UX from content headings", () => {
+      expect(
+        detectSpecFileType(
+          "design-specs.md",
+          "# Design\n\n## Design Principles\n\n- Mobile first\n- Accessible"
+        )
+      ).toBe("ux");
+
+      expect(
+        detectSpecFileType(
+          "wireframes.md",
+          "# Wireframes\n\n## User Flows\n\nLogin -> Dashboard -> Settings"
+        )
+      ).toBe("ux");
+    });
+
+    it("detects test-design from content headings", () => {
+      expect(
+        detectSpecFileType(
+          "quality.md",
+          "# Quality\n\n## Test Strategy\n\n- Unit tests\n- Integration tests"
+        )
+      ).toBe("test-design");
+
+      expect(
+        detectSpecFileType("qa-plan.md", "# QA\n\n## Test Cases\n\nTC-001: Login validation")
+      ).toBe("test-design");
+    });
+
+    it("detects readiness from content headings", () => {
+      expect(
+        detectSpecFileType("checklist.md", "# Checklist\n\n## GO / NO-GO\n\n- [ ] All tests pass")
+      ).toBe("readiness");
+
+      expect(
+        detectSpecFileType("status.md", "# Status\n\n## Readiness Assessment\n\nAll criteria met.")
+      ).toBe("readiness");
+    });
+
+    it("detects research from content headings", () => {
+      expect(
+        detectSpecFileType("findings.md", "# Findings\n\n## Key Findings\n\n- 70% prefer CLI tools")
+      ).toBe("research");
+
+      expect(
+        detectSpecFileType(
+          "analysis.md",
+          "# Analysis\n\n## Market Analysis\n\nThe market is growing at 18%"
+        )
+      ).toBe("research");
+    });
+
+    it("does not use content fallback when filename already matches", () => {
+      // Even though content has "Key Findings", filename match for "prd" takes precedence
+      expect(detectSpecFileType("prd.md", "# PRD\n\n## Key Findings\n\nSome research")).toBe("prd");
+    });
+
+    it("only checks first 2000 chars for content-based detection", () => {
+      const padding = "x".repeat(2000);
+      const content = `# Document\n\n${padding}\n\n## Functional Requirements\n\nLate content`;
+      expect(detectSpecFileType("notes.md", content)).toBe("other");
     });
   });
 
@@ -104,6 +212,10 @@ describe("specs-index", () => {
     it("returns medium for ux/sprint", () => {
       expect(determinePriority("ux", 1000)).toBe("medium");
       expect(determinePriority("sprint", 1000)).toBe("medium");
+    });
+
+    it("returns high for research", () => {
+      expect(determinePriority("research", 1000)).toBe("high");
     });
 
     it("returns low for brainstorm/other", () => {

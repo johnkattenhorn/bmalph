@@ -5,7 +5,7 @@ import { LARGE_FILE_THRESHOLD_BYTES, DEFAULT_SNIPPET_MAX_LENGTH } from "../utils
 /**
  * Detects the type of a spec file based on its filename.
  */
-export function detectSpecFileType(filename: string, _content: string): SpecFileType {
+export function detectSpecFileType(filename: string, content: string): SpecFileType {
   const lower = filename.toLowerCase();
 
   if (lower.includes("prd")) return "prd";
@@ -17,6 +17,29 @@ export function detectSpecFileType(filename: string, _content: string): SpecFile
   if (/\btest/i.test(lower)) return "test-design";
   if (lower.includes("readiness")) return "readiness";
   if (lower.includes("sprint")) return "sprint";
+
+  return detectFromContent(content);
+}
+
+/**
+ * Content-based fallback when filename doesn't match any known pattern.
+ * Checks first 2000 characters for heading patterns.
+ */
+function detectFromContent(content: string): SpecFileType {
+  const snippet = content.slice(0, 2000);
+
+  if (/^##\s+Functional Requirements/m.test(snippet) || /^##\s+Executive Summary/m.test(snippet))
+    return "prd";
+  if (/^##\s+Tech Stack/m.test(snippet) || /^##\s+Architecture Decision/m.test(snippet))
+    return "architecture";
+  if (/^###\s+Story\s+\d+\.\d+:/m.test(snippet)) return "stories";
+  if (/^##\s+Design Principles/m.test(snippet) || /^##\s+User Flows/m.test(snippet)) return "ux";
+  if (/^##\s+Test Strategy/m.test(snippet) || /^##\s+Test Cases/m.test(snippet))
+    return "test-design";
+  if (/^##\s+GO\s*\/\s*NO-GO/m.test(snippet) || /^##\s+Readiness/m.test(snippet))
+    return "readiness";
+  if (/^##\s+Key Findings/m.test(snippet) || /^##\s+Market Analysis/m.test(snippet))
+    return "research";
 
   return "other";
 }
@@ -32,6 +55,7 @@ export function determinePriority(type: SpecFileType, _size: number): Priority {
       return "critical";
     case "test-design":
     case "readiness":
+    case "research":
       return "high";
     case "ux":
     case "sprint":

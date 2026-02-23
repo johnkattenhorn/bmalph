@@ -6,6 +6,7 @@ import {
   detectOrphanedCompletedStories,
   detectRenumberedStories,
   mergeFixPlanProgress,
+  buildCompletedTitleMap,
 } from "../../src/transition/fix-plan.js";
 import type { Story, FixPlanItemWithTitle } from "../../src/transition/types.js";
 
@@ -265,6 +266,113 @@ describe("fix-plan", () => {
 
     it("returns plan unchanged for empty input", () => {
       expect(mergeFixPlanProgress("", new Set())).toBe("");
+    });
+
+    it("preserves completion via title match when IDs change", () => {
+      const plan = "- [ ] Story 2.1: Login form\n- [ ] Story 2.2: Dashboard";
+      const completedIds = new Set<string>(); // old ID 1.1 is not in new plan
+      const titleMap = new Map([
+        ["2.1", "Login form"],
+        ["2.2", "Dashboard"],
+      ]);
+      const completedTitles = new Map([["login form", "1.1"]]);
+
+      const merged = mergeFixPlanProgress(plan, completedIds, titleMap, completedTitles);
+
+      expect(merged).toContain("- [x] Story 2.1: Login form");
+      expect(merged).toContain("- [ ] Story 2.2: Dashboard");
+    });
+
+    it("prefers ID match over title match", () => {
+      const plan = "- [ ] Story 1.1: Login form\n- [ ] Story 1.2: Logout";
+      const completedIds = new Set(["1.1"]);
+      const titleMap = new Map([
+        ["1.1", "Login form"],
+        ["1.2", "Logout"],
+      ]);
+      const completedTitles = new Map<string, string>();
+
+      const merged = mergeFixPlanProgress(plan, completedIds, titleMap, completedTitles);
+
+      expect(merged).toContain("- [x] Story 1.1: Login form");
+      expect(merged).toContain("- [ ] Story 1.2: Logout");
+    });
+
+    it("handles title match case-insensitively", () => {
+      const plan = "- [ ] Story 2.1: LOGIN FORM";
+      const completedIds = new Set<string>();
+      const titleMap = new Map([["2.1", "LOGIN FORM"]]);
+      const completedTitles = new Map([["login form", "1.1"]]);
+
+      const merged = mergeFixPlanProgress(plan, completedIds, titleMap, completedTitles);
+
+      expect(merged).toContain("- [x] Story 2.1: LOGIN FORM");
+    });
+
+    it("works without optional title parameters (backwards compatible)", () => {
+      const plan = "- [ ] Story 1.1: Login\n- [ ] Story 1.2: Logout";
+      const completed = new Set(["1.1"]);
+
+      const merged = mergeFixPlanProgress(plan, completed);
+
+      expect(merged).toContain("- [x] Story 1.1: Login");
+      expect(merged).toContain("- [ ] Story 1.2: Logout");
+    });
+  });
+
+  describe("buildCompletedTitleMap", () => {
+    it("builds map from completed items with titles", () => {
+      const items: FixPlanItemWithTitle[] = [
+        { id: "1.1", completed: true, title: "Login form" },
+        { id: "1.2", completed: false, title: "Logout" },
+        { id: "2.1", completed: true, title: "Dashboard" },
+      ];
+
+      const map = buildCompletedTitleMap(items);
+
+      expect(map.get("login form")).toBe("1.1");
+      expect(map.get("dashboard")).toBe("2.1");
+      expect(map.has("logout")).toBe(false);
+    });
+
+    it("returns empty map for no completed items", () => {
+      const items: FixPlanItemWithTitle[] = [{ id: "1.1", completed: false, title: "Login" }];
+
+      const map = buildCompletedTitleMap(items);
+      expect(map.size).toBe(0);
+    });
+
+    it("skips items without titles", () => {
+      const items: FixPlanItemWithTitle[] = [{ id: "1.1", completed: true }];
+
+      const map = buildCompletedTitleMap(items);
+      expect(map.size).toBe(0);
+    });
+  });
+
+  describe("detectRenumberedStories", () => {
+    it("does not warn for stories that were auto-preserved via title match", () => {
+      const existing: FixPlanItemWithTitle[] = [
+        { id: "1.1", completed: true, title: "Login form" },
+      ];
+      const newStories = [makeStory({ id: "2.1", title: "Login form" })];
+      const preservedIds = new Set(["2.1"]);
+
+      const warnings = detectRenumberedStories(existing, newStories, preservedIds);
+
+      expect(warnings).toHaveLength(0);
+    });
+
+    it("still warns for renumbered stories not auto-preserved", () => {
+      const existing: FixPlanItemWithTitle[] = [
+        { id: "1.1", completed: true, title: "Login form" },
+      ];
+      const newStories = [makeStory({ id: "2.1", title: "Login form" })];
+
+      const warnings = detectRenumberedStories(existing, newStories);
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("renumbered");
     });
   });
 });

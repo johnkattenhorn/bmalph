@@ -72,11 +72,15 @@ export function extractProjectContext(artifacts: Map<string, string>): ExtractPr
   // Combine all content, keyed by likely role
   let prdContent = "";
   let archContent = "";
+  let uxContent = "";
+  let researchContent = "";
 
   for (const [filename, content] of artifacts) {
     if (/prd/i.test(filename)) prdContent += "\n" + content;
     if (/architect/i.test(filename)) archContent += "\n" + content;
     if (/readiness/i.test(filename)) archContent += "\n" + content;
+    if (/ux/i.test(filename)) uxContent += "\n" + content;
+    if (/research|market|domain|brief/i.test(filename)) researchContent += "\n" + content;
   }
 
   const allContent = prdContent + "\n" + archContent;
@@ -133,6 +137,28 @@ export function extractProjectContext(artifacts: Map<string, string>): ExtractPr
         /^##\s+Quality Attributes/m,
       ],
     },
+    {
+      field: "designGuidelines",
+      source: uxContent,
+      patterns: [
+        /^##\s+Design Principles/m,
+        /^##\s+Design System/m,
+        /^##\s+Core Experience/m,
+        /^##\s+User Flows/m,
+        /^##\s+Visual Foundation/m,
+      ],
+    },
+    {
+      field: "researchInsights",
+      source: researchContent,
+      patterns: [
+        /^##\s+Key Findings/m,
+        /^##\s+Recommendations/m,
+        /^##\s+Market Analysis/m,
+        /^##\s+Domain Insights/m,
+        /^##\s+Summary/m,
+      ],
+    },
   ];
 
   const context: ProjectContext = {
@@ -143,6 +169,8 @@ export function extractProjectContext(artifacts: Map<string, string>): ExtractPr
     scopeBoundaries: "",
     targetUsers: "",
     nonFunctionalRequirements: "",
+    designGuidelines: "",
+    researchInsights: "",
   };
 
   for (const { field, source, patterns } of fields) {
@@ -184,6 +212,8 @@ export function generateProjectContextMd(context: ProjectContext, projectName: s
     { heading: "Scope Boundaries", content: context.scopeBoundaries },
     { heading: "Target Users", content: context.targetUsers },
     { heading: "Non-Functional Requirements", content: context.nonFunctionalRequirements },
+    { heading: "Design Guidelines", content: context.designGuidelines },
+    { heading: "Research Insights", content: context.researchInsights },
   ];
 
   for (const { heading, content } of sections) {
@@ -208,6 +238,8 @@ export function generatePrompt(projectName: string, context?: ProjectContext): s
         context.targetUsers && `### Target Users\n${context.targetUsers}`,
         context.nonFunctionalRequirements &&
           `### Non-Functional Requirements\n${context.nonFunctionalRequirements}`,
+        context.designGuidelines && `### Design Guidelines\n${context.designGuidelines}`,
+        context.researchInsights && `### Research Insights\n${context.researchInsights}`,
       ]
         .filter(Boolean)
         .join("\n\n")

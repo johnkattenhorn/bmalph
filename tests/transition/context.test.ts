@@ -284,6 +284,133 @@ Short content.
       const { truncated } = extractProjectContext(artifacts);
       expect(truncated).toEqual([]);
     });
+
+    it("extracts design guidelines from UX documents", () => {
+      const artifacts = new Map([
+        [
+          "ux-specs.md",
+          `# UX Specifications
+
+## Design Principles
+
+- Mobile-first responsive design
+- Accessibility WCAG 2.1 AA compliance
+- Consistent visual hierarchy
+
+## User Flows
+
+Login -> Dashboard -> Settings
+
+## Other
+`,
+        ],
+      ]);
+      const { context } = extractProjectContext(artifacts);
+      expect(context.designGuidelines).toContain("Mobile-first responsive design");
+      expect(context.designGuidelines).toContain("Accessibility WCAG 2.1 AA compliance");
+    });
+
+    it("extracts research insights from research documents", () => {
+      const artifacts = new Map([
+        [
+          "market-research.md",
+          `# Market Research
+
+## Key Findings
+
+- 70% of developers prefer CLI tools over GUIs
+- Average onboarding time is 15 minutes
+
+## Recommendations
+
+Prioritize documentation and quick-start guides.
+
+## Other
+`,
+        ],
+      ]);
+      const { context } = extractProjectContext(artifacts);
+      expect(context.researchInsights).toContain("70% of developers prefer CLI tools");
+    });
+
+    it("extracts from multiple UX heading patterns", () => {
+      const artifacts = new Map([
+        [
+          "ux-design.md",
+          `# UX Design
+
+## Design System
+
+Color palette: primary blue, accent green
+Typography: Inter for body, mono for code
+
+## Visual Foundation
+
+Grid: 8px base unit
+
+## Next Section
+`,
+        ],
+      ]);
+      const { context } = extractProjectContext(artifacts);
+      expect(context.designGuidelines).toContain("Color palette");
+    });
+
+    it("extracts from multiple research heading patterns", () => {
+      const artifacts = new Map([
+        [
+          "domain-brief.md",
+          `# Domain Brief
+
+## Domain Insights
+
+The CI/CD market is growing at 18% annually.
+Key players include GitHub Actions, GitLab CI.
+
+## Other
+`,
+        ],
+      ]);
+      const { context } = extractProjectContext(artifacts);
+      expect(context.researchInsights).toContain("CI/CD market is growing");
+    });
+
+    it("returns empty UX/research fields when no matching artifacts exist", () => {
+      const artifacts = new Map([
+        [
+          "prd.md",
+          `# PRD
+
+## Executive Summary
+
+Goals here.
+`,
+        ],
+      ]);
+      const { context } = extractProjectContext(artifacts);
+      expect(context.designGuidelines).toBe("");
+      expect(context.researchInsights).toBe("");
+    });
+
+    it("truncates long UX/research content", () => {
+      const longContent = "D".repeat(6000);
+      const artifacts = new Map([
+        [
+          "ux-specs.md",
+          `# UX
+
+## Design Principles
+
+${longContent}
+
+## Other
+`,
+        ],
+      ]);
+      const { context, truncated } = extractProjectContext(artifacts);
+      expect(context.designGuidelines.length).toBe(5000);
+      expect(truncated.some((t) => t.field === "designGuidelines")).toBe(true);
+    });
   });
 
   describe("detectTruncation", () => {
@@ -367,6 +494,58 @@ Short content.
       expect(md).toContain("## Target Users");
       expect(md).toContain("## Non-Functional Requirements");
     });
+
+    it("includes design guidelines section when present", () => {
+      const context = {
+        projectGoals: "Goals",
+        successMetrics: "",
+        architectureConstraints: "",
+        technicalRisks: "",
+        scopeBoundaries: "",
+        targetUsers: "",
+        nonFunctionalRequirements: "",
+        designGuidelines: "Mobile-first, WCAG 2.1 AA",
+      };
+      const md = generateProjectContextMd(context, "TestProject");
+
+      expect(md).toContain("## Design Guidelines");
+      expect(md).toContain("Mobile-first, WCAG 2.1 AA");
+    });
+
+    it("includes research insights section when present", () => {
+      const context = {
+        projectGoals: "Goals",
+        successMetrics: "",
+        architectureConstraints: "",
+        technicalRisks: "",
+        scopeBoundaries: "",
+        targetUsers: "",
+        nonFunctionalRequirements: "",
+        researchInsights: "70% of users prefer CLI tools",
+      };
+      const md = generateProjectContextMd(context, "TestProject");
+
+      expect(md).toContain("## Research Insights");
+      expect(md).toContain("70% of users prefer CLI tools");
+    });
+
+    it("omits design guidelines and research insights when empty", () => {
+      const context = {
+        projectGoals: "Goals",
+        successMetrics: "",
+        architectureConstraints: "",
+        technicalRisks: "",
+        scopeBoundaries: "",
+        targetUsers: "",
+        nonFunctionalRequirements: "",
+        designGuidelines: "",
+        researchInsights: "",
+      };
+      const md = generateProjectContextMd(context, "TestProject");
+
+      expect(md).not.toContain("## Design Guidelines");
+      expect(md).not.toContain("## Research Insights");
+    });
   });
 
   describe("generatePrompt", () => {
@@ -446,6 +625,58 @@ Short content.
       expect(prompt).toContain("TestProject project");
       expect(prompt).toContain("RALPH_STATUS");
       expect(prompt).not.toContain("### Project Goals");
+    });
+
+    it("embeds design guidelines in prompt when provided", () => {
+      const context = {
+        projectGoals: "Build a CLI",
+        successMetrics: "",
+        architectureConstraints: "",
+        technicalRisks: "",
+        scopeBoundaries: "",
+        targetUsers: "",
+        nonFunctionalRequirements: "",
+        designGuidelines: "Mobile-first responsive layout",
+      };
+      const prompt = generatePrompt("TestProject", context);
+
+      expect(prompt).toContain("### Design Guidelines");
+      expect(prompt).toContain("Mobile-first responsive layout");
+    });
+
+    it("embeds research insights in prompt when provided", () => {
+      const context = {
+        projectGoals: "Build a CLI",
+        successMetrics: "",
+        architectureConstraints: "",
+        technicalRisks: "",
+        scopeBoundaries: "",
+        targetUsers: "",
+        nonFunctionalRequirements: "",
+        researchInsights: "Market analysis shows 70% CLI preference",
+      };
+      const prompt = generatePrompt("TestProject", context);
+
+      expect(prompt).toContain("### Research Insights");
+      expect(prompt).toContain("Market analysis shows 70% CLI preference");
+    });
+
+    it("omits design/research sections from prompt when empty", () => {
+      const context = {
+        projectGoals: "Build a CLI",
+        successMetrics: "",
+        architectureConstraints: "",
+        technicalRisks: "",
+        scopeBoundaries: "",
+        targetUsers: "",
+        nonFunctionalRequirements: "",
+        designGuidelines: "",
+        researchInsights: "",
+      };
+      const prompt = generatePrompt("TestProject", context);
+
+      expect(prompt).not.toContain("### Design Guidelines");
+      expect(prompt).not.toContain("### Research Insights");
     });
   });
 });

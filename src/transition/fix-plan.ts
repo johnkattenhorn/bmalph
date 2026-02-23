@@ -90,28 +90,31 @@ export function detectOrphanedCompletedStories(
 /**
  * Detects stories that may have been renumbered by comparing titles.
  * Returns warnings when a completed story's title appears under a different ID.
+ * Skips stories that were already auto-preserved via title-based merge.
  */
 export function detectRenumberedStories(
   existingItems: FixPlanItemWithTitle[],
-  newStories: Story[]
+  newStories: Story[],
+  preservedIds?: Set<string>
 ): string[] {
   const warnings: string[] = [];
 
   // Build a map of new story titles (lowercased) to IDs
   const newTitleToId = new Map<string, string>();
   for (const story of newStories) {
-    newTitleToId.set(story.title.toLowerCase().trim(), story.id);
+    newTitleToId.set(normalizeTitle(story.title), story.id);
   }
 
   // Check each completed story
   for (const item of existingItems) {
     if (!item.completed || !item.title) continue;
 
-    const normalizedTitle = item.title.toLowerCase().trim();
+    const normalizedTitle = normalizeTitle(item.title);
     const newId = newTitleToId.get(normalizedTitle);
 
     // If title exists under a different ID, warn about renumbering
-    if (newId && newId !== item.id) {
+    // (unless it was already auto-preserved)
+    if (newId && newId !== item.id && !preservedIds?.has(newId)) {
       warnings.push(
         `Story "${item.title}" appears to have been renumbered from ${item.id} to ${newId}. Completion status was not preserved.`
       );
@@ -121,12 +124,44 @@ export function detectRenumberedStories(
   return warnings;
 }
 
-export function mergeFixPlanProgress(newFixPlan: string, completedIds: Set<string>): string {
-  // Replace [ ] with [x] for completed story IDs
+export function normalizeTitle(title: string): string {
+  return title.toLowerCase().trim();
+}
+
+/**
+ * Builds a map from normalized (lowercased) title to story ID for completed items.
+ */
+export function buildCompletedTitleMap(items: FixPlanItemWithTitle[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const item of items) {
+    if (item.completed && item.title) {
+      map.set(normalizeTitle(item.title), item.id);
+    }
+  }
+  return map;
+}
+
+export function mergeFixPlanProgress(
+  newFixPlan: string,
+  completedIds: Set<string>,
+  titleMap?: Map<string, string>,
+  completedTitles?: Map<string, string>
+): string {
+  // Replace [ ] with [x] for completed story IDs or title matches
   return newFixPlan.replace(
     /^(\s*-\s*)\[ \](\s*Story\s+(\d+\.\d+):)/gm,
     (match, prefix, suffix, id) => {
-      return completedIds.has(id) ? `${prefix}[x]${suffix}` : match;
+      if (completedIds.has(id)) return `${prefix}[x]${suffix}`;
+
+      // Title-based fallback: check if title matches a completed story
+      if (titleMap && completedTitles) {
+        const title = titleMap.get(id);
+        if (title && completedTitles.has(normalizeTitle(title))) {
+          return `${prefix}[x]${suffix}`;
+        }
+      }
+
+      return match;
     }
   );
 }

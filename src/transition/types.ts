@@ -6,6 +6,8 @@ export interface ProjectContext {
   scopeBoundaries: string;
   targetUsers: string;
   nonFunctionalRequirements: string;
+  designGuidelines: string;
+  researchInsights: string;
 }
 
 export interface Story {
@@ -54,6 +56,7 @@ export type SpecFileType =
   | "readiness"
   | "sprint"
   | "brainstorm"
+  | "research"
   | "other";
 
 export type Priority = "critical" | "high" | "medium" | "low";

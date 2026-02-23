@@ -13,6 +13,8 @@ import {
   mergeFixPlanProgress,
   detectOrphanedCompletedStories,
   detectRenumberedStories,
+  buildCompletedTitleMap,
+  normalizeTitle,
 } from "./fix-plan.js";
 import { detectTechStack, customizeAgentMd } from "./tech-stack.js";
 import { findArtifactsDir } from "./artifacts.js";
@@ -130,16 +132,33 @@ export async function runTransition(
     warn(w);
   }
 
-  // Detect renumbered stories (Bug #3)
-  const renumberWarnings = detectRenumberedStories(existingItems, stories);
-  for (const w of renumberWarnings) {
-    warn(w);
-  }
+  // Build title maps for title-based merge (Gap 3: renumbered story preservation)
+  const completedTitles = buildCompletedTitleMap(existingItems);
+  const newTitleMap = new Map(stories.map((s) => [s.id, s.title]));
 
   // Generate new fix_plan from current stories, preserving completion status
   info(`Generating fix plan for ${stories.length} stories...`);
   const newFixPlan = generateFixPlan(stories, storiesFile);
-  const mergedFixPlan = mergeFixPlanProgress(newFixPlan, completedIds);
+  const mergedFixPlan = mergeFixPlanProgress(
+    newFixPlan,
+    completedIds,
+    newTitleMap,
+    completedTitles
+  );
+
+  // Detect which stories were preserved via title match (for renumber warning suppression)
+  const preservedIds = new Set<string>();
+  for (const [id, title] of newTitleMap) {
+    if (!completedIds.has(id) && completedTitles.has(normalizeTitle(title))) {
+      preservedIds.add(id);
+    }
+  }
+
+  // Detect renumbered stories (Bug #3), skipping auto-preserved ones
+  const renumberWarnings = detectRenumberedStories(existingItems, stories, preservedIds);
+  for (const w of renumberWarnings) {
+    warn(w);
+  }
   await atomicWriteFile(fixPlanPath, mergedFixPlan);
   generatedFiles.push({
     path: ".ralph/@fix_plan.md",

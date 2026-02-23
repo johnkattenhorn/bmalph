@@ -1033,7 +1033,7 @@ So that I can access the app.
       expect(result.warnings).toContainEqual(expect.stringMatching(/architect/i));
     });
 
-    it("returns no PRD/architecture warnings when both exist", async () => {
+    it("returns no file-missing warnings when PRD and architecture both exist", async () => {
       await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
       await writeFile(join(testDir, "_bmad-output/planning-artifacts/prd.md"), "# PRD");
       await writeFile(join(testDir, "_bmad-output/planning-artifacts/architecture.md"), "# Arch");
@@ -1044,11 +1044,14 @@ So that I can access the app.
 
       const result = await runTransition(testDir);
 
-      expect(result.warnings).not.toContainEqual(expect.stringMatching(/PRD/i));
-      expect(result.warnings).not.toContainEqual(expect.stringMatching(/architect/i));
+      // W1 and W2 (file-not-found) should not be present
+      expect(result.warnings).not.toContainEqual(expect.stringMatching(/no prd document found/i));
+      expect(result.warnings).not.toContainEqual(
+        expect.stringMatching(/no architecture document found/i)
+      );
     });
 
-    it("returns warning when readiness report contains NO-GO", async () => {
+    it("throws on NO-GO readiness report", async () => {
       await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
       await writeFile(join(testDir, "_bmad-output/planning-artifacts/prd.md"), "# PRD");
       await writeFile(join(testDir, "_bmad-output/planning-artifacts/architecture.md"), "# Arch");
@@ -1061,9 +1064,7 @@ So that I can access the app.
         `## Epic 1: X\n\n### Story 1.1: Y\n\nDo Y.\n`
       );
 
-      const result = await runTransition(testDir);
-
-      expect(result.warnings).toContainEqual(expect.stringMatching(/NO.?GO/i));
+      await expect(runTransition(testDir)).rejects.toThrow(/pre-flight validation failed/i);
     });
 
     it("preserves fix_plan.md when it has checked items", async () => {

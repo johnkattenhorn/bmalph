@@ -2,6 +2,8 @@ import chalk from "chalk";
 import { readConfig } from "../utils/config.js";
 import { readState, readRalphStatus, getPhaseLabel, getPhaseInfo } from "../utils/state.js";
 import { withErrorHandling } from "../utils/errors.js";
+import { resolveProjectPlatform } from "../platform/resolve.js";
+import type { Platform } from "../platform/types.js";
 
 interface StatusOptions {
   json?: boolean;
@@ -48,8 +50,11 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     ralphStatus = await readRalphStatus(projectDir);
   }
 
+  // Resolve platform for next action hints
+  const platform = await resolveProjectPlatform(projectDir);
+
   // Determine next action
-  const nextAction = getNextAction(phase, status, ralphStatus);
+  const nextAction = getNextAction(phase, status, ralphStatus, platform);
 
   if (options.json) {
     const output: StatusOutput = {
@@ -133,7 +138,8 @@ function formatRalphStatus(status: string): string {
 function getNextAction(
   phase: number,
   status: string,
-  ralphStatus: { status: string } | null
+  ralphStatus: { status: string } | null,
+  platform: Platform
 ): string | null {
   if (status === "completed") {
     return null;
@@ -145,10 +151,13 @@ function getNextAction(
     case 2:
       return "Run /pm to create PRD";
     case 3:
-      return "Run /bmalph-implement when ready for implementation";
+      return "Run: bmalph implement";
     case 4:
       if (!ralphStatus || ralphStatus.status === "not_started") {
-        return "Start Ralph loop with: bash .ralph/ralph_loop.sh";
+        if (platform.tier === "full") {
+          return `Start Ralph loop with: bash .ralph/drivers/${platform.id}.sh`;
+        }
+        return "Ralph requires a full-tier platform (Claude Code or Codex)";
       }
       if (ralphStatus.status === "blocked") {
         return "Review Ralph logs: bmalph doctor";

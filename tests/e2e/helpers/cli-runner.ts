@@ -101,3 +101,12 @@ export async function runUpgradeDryRun(cwd: string): Promise<CliResult> {
 export async function runDoctor(cwd: string): Promise<CliResult> {
   return runCli(["doctor"], { cwd });
 }
+
+/**
+ * Run implement command
+ */
+export async function runImplement(cwd: string, force = false): Promise<CliResult> {
+  const args = ["implement"];
+  if (force) args.push("--force");
+  return runCli(args, { cwd });
+}

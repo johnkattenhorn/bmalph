@@ -5,7 +5,7 @@ import { isEnoent, formatError } from "../utils/errors.js";
 import { atomicWriteFile } from "../utils/file-system.js";
 import { readConfig } from "../utils/config.js";
 import { readState, writeState, type BmalphState } from "../utils/state.js";
-import type { TransitionResult } from "./types.js";
+import type { TransitionResult, TransitionOptions } from "./types.js";
 import { parseStoriesWithWarnings } from "./story-parsing.js";
 import {
   generateFixPlan,
@@ -15,7 +15,8 @@ import {
   detectRenumberedStories,
 } from "./fix-plan.js";
 import { detectTechStack, customizeAgentMd } from "./tech-stack.js";
-import { findArtifactsDir, validateArtifacts } from "./artifacts.js";
+import { findArtifactsDir } from "./artifacts.js";
+import { runPreflight } from "./preflight.js";
 import {
   extractProjectContext,
   generateProjectContextMd,
@@ -25,7 +26,10 @@ import {
 import { generateSpecsChangelog, formatChangelog } from "./specs-changelog.js";
 import { generateSpecsIndex, formatSpecsIndexMd } from "./specs-index.js";
 
-export async function runTransition(projectDir: string): Promise<TransitionResult> {
+export async function runTransition(
+  projectDir: string,
+  options?: TransitionOptions
+): Promise<TransitionResult> {
   info("Locating BMAD artifacts...");
   const artifactsDir = await findArtifactsDir(projectDir);
   if (!artifactsDir) {
@@ -36,6 +40,20 @@ export async function runTransition(projectDir: string): Promise<TransitionResul
 
   // Find and parse stories file
   const files = await readdir(artifactsDir);
+
+  // Read artifact contents early for preflight validation and later use
+  const artifactContents = new Map<string, string>();
+  for (const file of files) {
+    if (file.endsWith(".md")) {
+      try {
+        const content = await readFile(join(artifactsDir, file), "utf-8");
+        artifactContents.set(file, content);
+      } catch (err) {
+        warn(`Could not read artifact ${file}: ${formatError(err)}`);
+      }
+    }
+  }
+
   const storiesPattern = /^(epics[-_]?(and[-_]?)?)?stor(y|ies)([-_]\d+)?\.md$/i;
   const storiesFile = files.find((f) => storiesPattern.test(f) || /epic/i.test(f));
 
@@ -55,6 +73,33 @@ export async function runTransition(projectDir: string): Promise<TransitionResul
     throw new Error(
       "No stories parsed from the epics file. Ensure stories follow the format: ### Story N.M: Title"
     );
+  }
+
+  // Pre-flight validation
+  info("Pre-flight validation...");
+  const preflightResult = runPreflight(artifactContents, files, stories, parseWarnings);
+
+  for (const issue of preflightResult.issues) {
+    if (issue.severity === "error") {
+      warn(`  ERROR  ${issue.id}: ${issue.message}`);
+      if (issue.suggestion) warn(`         ${issue.suggestion}`);
+    } else if (issue.severity === "warning") {
+      warn(`  WARN   ${issue.id}: ${issue.message}`);
+      if (issue.suggestion) warn(`         ${issue.suggestion}`);
+    } else {
+      info(`  INFO   ${issue.id}: ${issue.message}`);
+    }
+  }
+
+  if (!preflightResult.pass) {
+    if (options?.force) {
+      warn("Pre-flight validation has errors but --force was used, continuing...");
+    } else {
+      const errors = preflightResult.issues.filter((i) => i.severity === "error");
+      throw new Error(
+        `Pre-flight validation failed: ${errors.map((e) => e.message).join("; ")}. Use --force to override.`
+      );
+    }
   }
 
   // Check existing fix_plan for completed items (smart merge)
@@ -171,18 +216,6 @@ export async function runTransition(projectDir: string): Promise<TransitionResul
   }
 
   // Generate PROJECT_CONTEXT.md from planning artifacts
-  const artifactContents = new Map<string, string>();
-  for (const file of files) {
-    if (file.endsWith(".md")) {
-      try {
-        const content = await readFile(join(artifactsDir, file), "utf-8");
-        artifactContents.set(file, content);
-      } catch (err) {
-        warn(`Could not read artifact ${file}: ${formatError(err)}`);
-      }
-    }
-  }
-
   let projectName = "project";
   try {
     const config = await readConfig(projectDir);
@@ -231,26 +264,39 @@ export async function runTransition(projectDir: string): Promise<TransitionResul
   // Customize @AGENT.md based on detected tech stack from architecture
   const architectureFile = files.find((f) => /architect/i.test(f));
   if (architectureFile) {
-    try {
-      const archContent = await readFile(join(artifactsDir, architectureFile), "utf-8");
-      const stack = detectTechStack(archContent);
-      if (stack) {
-        const agentPath = join(projectDir, ".ralph/@AGENT.md");
-        const agentTemplate = await readFile(agentPath, "utf-8");
-        const customized = customizeAgentMd(agentTemplate, stack);
-        await atomicWriteFile(agentPath, customized);
-        debug("Customized @AGENT.md with detected tech stack");
+    const archContent = artifactContents.get(architectureFile);
+    if (archContent) {
+      try {
+        const stack = detectTechStack(archContent);
+        if (stack) {
+          const agentPath = join(projectDir, ".ralph/@AGENT.md");
+          const agentTemplate = await readFile(agentPath, "utf-8");
+          const customized = customizeAgentMd(agentTemplate, stack);
+          await atomicWriteFile(agentPath, customized);
+          debug("Customized @AGENT.md with detected tech stack");
+        }
+      } catch (err) {
+        warn(`Could not customize @AGENT.md: ${formatError(err)}`);
       }
-    } catch (err) {
-      warn(`Could not customize @AGENT.md: ${formatError(err)}`);
     }
   }
 
-  // Validate artifacts and collect warnings
-  const artifactWarnings = await validateArtifacts(files, artifactsDir);
+  // Collect warnings from all sources
+  const preflightWarnings = preflightResult.issues
+    .filter((i) => i.severity === "warning" || (i.severity === "error" && options?.force))
+    .map((i) => i.message);
+
+  // Keep parse warnings not already covered by preflight (e.g., malformed IDs)
+  const nonPreflightParseWarnings = parseWarnings.filter(
+    (w) =>
+      !/has no acceptance criteria/i.test(w) &&
+      !/has no description/i.test(w) &&
+      !/not under an epic/i.test(w)
+  );
+
   const warnings = [
-    ...parseWarnings,
-    ...artifactWarnings,
+    ...preflightWarnings,
+    ...nonPreflightParseWarnings,
     ...orphanWarnings,
     ...renumberWarnings,
     ...truncationWarnings,
@@ -268,5 +314,10 @@ export async function runTransition(projectDir: string): Promise<TransitionResul
   await writeState(projectDir, newState);
   info("Transition complete: phase 4 (implementing)");
 
-  return { storiesCount: stories.length, warnings, fixPlanPreserved };
+  return {
+    storiesCount: stories.length,
+    warnings,
+    fixPlanPreserved,
+    preflightIssues: preflightResult.issues,
+  };
 }

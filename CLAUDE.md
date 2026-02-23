@@ -14,7 +14,7 @@ bmalph provides:
 - `bmalph init` — Install both systems
 - `bmalph upgrade` — Update to latest versions
 - `bmalph doctor` — Check installation health
-- `/bmalph-implement` — Transition from BMAD to Ralph
+- `bmalph implement` / `/bmalph-implement` — Transition from BMAD to Ralph
 
 ## Architecture
 
@@ -39,13 +39,14 @@ The instructions file depends on the configured platform — see `src/platform/`
 
 ## CLI Commands
 
-| Command                | Action                                   |
-| ---------------------- | ---------------------------------------- |
-| `bmalph init`          | Install BMAD + Ralph, configure project  |
-| `bmalph upgrade`       | Update bundled assets to current version |
-| `bmalph doctor`        | Check installation health                |
-| `bmalph check-updates` | Check for upstream updates               |
-| `bmalph status`        | Show project installation status         |
+| Command                | Action                                    |
+| ---------------------- | ----------------------------------------- |
+| `bmalph init`          | Install BMAD + Ralph, configure project   |
+| `bmalph upgrade`       | Update bundled assets to current version  |
+| `bmalph doctor`        | Check installation health                 |
+| `bmalph check-updates` | Check for upstream updates                |
+| `bmalph status`        | Show project installation status          |
+| `bmalph implement`     | Transition BMAD artifacts to Ralph format |
 
 ## Slash Commands
 
@@ -66,7 +67,7 @@ For full list, run `/bmad-help` in Claude Code.
 
 ### Transition to Ralph
 
-Use `/bmalph-implement` to transition from BMAD planning to Ralph implementation.
+Use `bmalph implement` (or `/bmalph-implement`) to transition from BMAD planning to Ralph implementation.
 
 ## Key Files
 
@@ -77,6 +78,7 @@ Use `/bmalph-implement` to transition from BMAD planning to Ralph implementation
 - `src/transition/fix-plan.ts` — Generate @fix_plan.md
 - `src/transition/artifacts.ts` — Locate BMAD artifacts
 - `src/transition/context.ts` — Generate PROJECT_CONTEXT.md
+- `src/transition/preflight.ts` — Pre-flight validation checks
 - `src/transition/specs-changelog.ts` — Track spec changes
 - `src/transition/specs-index.ts` — Generate SPECS_INDEX.md
 - `src/transition/tech-stack.ts` — Detect tech stack
@@ -84,6 +86,7 @@ Use `/bmalph-implement` to transition from BMAD planning to Ralph implementation
 - `src/commands/init.ts` — CLI init handler
 - `src/commands/upgrade.ts` — CLI upgrade handler
 - `src/commands/doctor.ts` — CLI doctor handler
+- `src/commands/implement.ts` — CLI implement handler
 - `src/utils/state.ts` — Phase tracking + Ralph status reading
 - `src/utils/json.ts` — Safe JSON file reading with error discrimination
 - `src/utils/validate.ts` — Runtime config/state validation

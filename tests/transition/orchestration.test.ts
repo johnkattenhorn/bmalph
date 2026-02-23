@@ -415,4 +415,103 @@ describe("orchestration", () => {
       expect(content).toContain("Ralph");
     });
   });
+
+  describe("pre-flight validation", () => {
+    it("halts transition on NO-GO readiness report", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/readiness.md"),
+        `# Readiness Report\n\n**NO-GO** - Missing test coverage.\n`
+      );
+
+      await expect(runTransition(testDir)).rejects.toThrow(/pre-flight validation failed/i);
+    });
+
+    it("proceeds with warnings for missing PRD sections", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+      // PRD without proper sections
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/prd.md"),
+        `# PRD\n\nJust some text.\n`
+      );
+
+      const result = await runTransition(testDir);
+
+      // Should succeed but have warnings for missing sections
+      expect(result.storiesCount).toBe(1);
+      expect(result.warnings).toContainEqual(expect.stringMatching(/prd missing/i));
+    });
+
+    it("respects force option to downgrade E1 to warning", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/readiness.md"),
+        `# Readiness Report\n\n**NO-GO** - Missing test coverage.\n`
+      );
+
+      const result = await runTransition(testDir, { force: true });
+
+      // Should succeed with force
+      expect(result.storiesCount).toBe(1);
+      // NO-GO should appear as a warning
+      expect(result.warnings).toContainEqual(expect.stringMatching(/no-go/i));
+    });
+
+    it("includes preflight warnings in TransitionResult.warnings", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+
+      const result = await runTransition(testDir);
+
+      // Should have W1 (no PRD) and W2 (no arch) in warnings
+      expect(result.warnings).toContainEqual(expect.stringMatching(/no prd/i));
+      expect(result.warnings).toContainEqual(expect.stringMatching(/no architecture/i));
+    });
+
+    it("returns preflightIssues in TransitionResult", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+
+      const result = await runTransition(testDir);
+
+      expect(result.preflightIssues).toBeDefined();
+      expect(result.preflightIssues!.length).toBeGreaterThan(0);
+      const ids = result.preflightIssues!.map((i) => i.id);
+      expect(ids).toContain("W1");
+      expect(ids).toContain("W2");
+    });
+
+    it("does not duplicate parse warnings in result", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      // Story without acceptance criteria
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+
+      const result = await runTransition(testDir);
+
+      // "has no acceptance criteria" should appear only once
+      const acWarnings = result.warnings.filter((w) => /has no acceptance criteria/i.test(w));
+      expect(acWarnings).toHaveLength(1);
+    });
+  });
 });

@@ -239,4 +239,77 @@ describe("bmalph transition e2e", { timeout: 60000 }, () => {
       "New Section"
     );
   });
+
+  it("blocks transition when readiness report says NO-GO", async () => {
+    project = await createTestProject();
+
+    await runInit(project.path);
+    await setupBmadArtifacts(project.path);
+
+    // Add NO-GO readiness report
+    const artifactsDir = join(project.path, "_bmad-output/planning-artifacts");
+    await writeFile(
+      join(artifactsDir, "readiness-report.md"),
+      `# Readiness Report\n\n## Status\n\n**NO-GO** - Missing test coverage requirements.\n`
+    );
+
+    await expect(runTransition(project.path)).rejects.toThrow(/pre-flight validation failed/i);
+  });
+
+  it("proceeds with NO-GO when force option is used", async () => {
+    project = await createTestProject();
+
+    await runInit(project.path);
+    await setupBmadArtifacts(project.path);
+
+    // Add NO-GO readiness report
+    const artifactsDir = join(project.path, "_bmad-output/planning-artifacts");
+    await writeFile(
+      join(artifactsDir, "readiness-report.md"),
+      `# Readiness Report\n\n## Status\n\n**NO-GO** - Missing test coverage requirements.\n`
+    );
+
+    const result = await runTransition(project.path, { force: true });
+
+    expect(result.storiesCount).toBe(3);
+    expect(result.warnings).toContainEqual(expect.stringMatching(/no-go/i));
+  });
+
+  it("logs warnings for missing PRD sections without blocking", async () => {
+    project = await createTestProject();
+
+    await runInit(project.path);
+
+    // Create artifacts with minimal PRD (missing sections)
+    const artifactsDir = join(project.path, "_bmad-output/planning-artifacts");
+    await mkdir(artifactsDir, { recursive: true });
+    await writeFile(join(artifactsDir, "epics-and-stories.md"), SAMPLE_EPICS_STORIES);
+    await writeFile(join(artifactsDir, "architecture.md"), SAMPLE_ARCHITECTURE);
+    await writeFile(join(artifactsDir, "prd.md"), `# PRD\n\n## Overview\n\nJust an overview.\n`);
+
+    const result = await runTransition(project.path);
+
+    // Transition should succeed
+    expect(result.storiesCount).toBe(3);
+    // But should have warnings about missing PRD sections
+    expect(result.warnings).toContainEqual(expect.stringMatching(/prd missing/i));
+  });
+
+  it("returns structured preflight issues for programmatic access", async () => {
+    project = await createTestProject();
+
+    await runInit(project.path);
+    await setupBmadArtifacts(project.path);
+
+    const result = await runTransition(project.path);
+
+    expect(result.preflightIssues).toBeDefined();
+    expect(Array.isArray(result.preflightIssues)).toBe(true);
+    // Should have at least some issues (PRD missing sections, etc.)
+    for (const issue of result.preflightIssues!) {
+      expect(issue).toHaveProperty("id");
+      expect(issue).toHaveProperty("severity");
+      expect(issue).toHaveProperty("message");
+    }
+  });
 });

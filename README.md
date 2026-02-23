@@ -25,7 +25,7 @@ bmalph provides:
 - `bmalph init` — Install both systems
 - `bmalph upgrade` — Update to latest versions
 - `bmalph doctor` — Check installation health
-- `/bmalph-implement` — Transition from BMAD to Ralph
+- `bmalph implement` — Transition from BMAD to Ralph
 
 ## Supported Platforms
 
@@ -155,7 +155,7 @@ Available in any phase for supporting tasks:
 
 > **Note:** Ralph is only available on **full** tier platforms (Claude Code, OpenAI Codex). Instructions-only platforms (Cursor, Windsurf, Copilot, Aider) support Phases 1-3 only.
 
-Use the `/bmalph-implement` slash command in Claude Code, or run the transition from the BMAD agents in Codex.
+Run `bmalph implement` from the terminal, or use the `/bmalph-implement` slash command in Claude Code.
 
 This transitions your BMAD artifacts into Ralph's format:
 
@@ -164,10 +164,14 @@ This transitions your BMAD artifacts into Ralph's format:
 3. Copies specs to `.ralph/specs/` with changelog tracking
 4. Instructs you to start the Ralph autonomous loop
 
-Then start Ralph:
+Then start Ralph using the driver for your platform:
 
 ```bash
-bash .ralph/ralph_loop.sh
+# Claude Code
+bash .ralph/drivers/claude-code.sh
+
+# OpenAI Codex
+bash .ralph/drivers/codex.sh
 ```
 
 Ralph picks stories one by one, implements with TDD, and commits. The loop stops when all stories are done or the circuit breaker triggers.
@@ -177,12 +181,12 @@ Ralph picks stories one by one, implements with TDD, and commits. The loop stops
 bmalph supports iterative development cycles:
 
 ```
-BMAD (Epic 1) → /bmalph-implement → Ralph works on Epic 1
+BMAD (Epic 1) → bmalph implement → Ralph works on Epic 1
      ↓
-BMAD (add Epic 2) → /bmalph-implement → Ralph sees changes + picks up Epic 2
+BMAD (add Epic 2) → bmalph implement → Ralph sees changes + picks up Epic 2
 ```
 
-**Smart Merge**: When you run `/bmalph-implement` again after Ralph has made progress:
+**Smart Merge**: When you run `bmalph implement` again after Ralph has made progress:
 
 - Completed stories (`[x]`) are preserved in the new fix_plan
 - New stories from BMAD are added as pending (`[ ]`)
@@ -198,6 +202,7 @@ BMAD (add Epic 2) → /bmalph-implement → Ralph sees changes + picks up Epic 2
 | `bmalph doctor`        | Check installation health                           |
 | `bmalph check-updates` | Check if bundled BMAD/Ralph versions are up to date |
 | `bmalph status`        | Show current project status and phase               |
+| `bmalph implement`     | Transition BMAD planning artifacts to Ralph format  |
 
 ### Global options
 
@@ -217,6 +222,12 @@ BMAD (add Epic 2) → /bmalph-implement → Ralph sees changes + picks up Epic 2
 | `-n, --name <name>`        | Project name                                                                       | directory name |
 | `-d, --description <desc>` | Project description                                                                | (prompted)     |
 | `--platform <id>`          | Target platform (`claude-code`, `codex`, `cursor`, `windsurf`, `copilot`, `aider`) | auto-detect    |
+
+### implement options
+
+| Flag      | Description                           |
+| --------- | ------------------------------------- |
+| `--force` | Override pre-flight validation errors |
 
 ### upgrade options
 
@@ -256,7 +267,7 @@ For full list, run `/bmad-help` in Claude Code.
 
 ### Transition to Ralph
 
-Use `/bmalph-implement` to transition from BMAD planning to Ralph implementation.
+Use `bmalph implement` (or `/bmalph-implement` in Claude Code) to transition from BMAD planning to Ralph implementation.
 
 ## Project Structure (after init)
 
@@ -290,10 +301,10 @@ project/
 │   ├── specs/                 # Copied from _bmad-output during transition
 │   ├── logs/                  # Loop execution logs
 │   ├── PROMPT.md              # Iteration prompt template
-│   ├── PROJECT_CONTEXT.md     # Extracted project context (after /bmalph-implement)
-│   ├── SPECS_CHANGELOG.md     # Spec diff since last run (after /bmalph-implement)
+│   ├── PROJECT_CONTEXT.md     # Extracted project context (after bmalph implement)
+│   ├── SPECS_CHANGELOG.md     # Spec diff since last run (after bmalph implement)
 │   ├── @AGENT.md              # Agent build instructions
-│   └── @fix_plan.md           # Generated task list (after /bmalph-implement)
+│   └── @fix_plan.md           # Generated task list (after bmalph implement)
 ├── bmalph/                    # State management
 │   ├── config.json            # Project config (name, description, platform)
 │   └── state/                 # Phase tracking data
@@ -352,8 +363,8 @@ wsl --install
 If you get permission errors:
 
 ```bash
-# Unix/Mac: Make ralph_loop.sh executable
-chmod +x .ralph/ralph_loop.sh
+# Unix/Mac: Make driver scripts executable
+chmod +x .ralph/drivers/*.sh
 
 # Check file ownership
 ls -la .ralph/
@@ -448,10 +459,10 @@ claude
 #    Phase 3: /architect → create architecture and stories
 
 # 4. Transition to Ralph
-#    Use /bmalph-implement to generate @fix_plan.md
+#    Run: bmalph implement
 
 # 5. Start autonomous implementation
-bash .ralph/ralph_loop.sh
+bash .ralph/drivers/claude-code.sh
 ```
 
 **Other platforms:**
@@ -465,9 +476,9 @@ bash .ralph/ralph_loop.sh
 # 3. Reference BMAD agents by name (analyst, pm, architect)
 #    Follow phases: Analysis → Planning → Solutioning
 
-# 4. For full tier platforms (Codex), transition via BMAD agents
-#    then start Ralph:
-bash .ralph/ralph_loop.sh
+# 4. For full tier platforms (Codex), transition to Ralph:
+#    Run: bmalph implement
+bash .ralph/drivers/codex.sh
 ```
 
 ## Contributing

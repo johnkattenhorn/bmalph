@@ -73,8 +73,27 @@ export interface SpecsIndex {
   files: SpecFileMetadata[];
 }
 
+export type PreflightSeverity = "error" | "warning" | "info";
+
+export interface PreflightIssue {
+  id: string;
+  severity: PreflightSeverity;
+  message: string;
+  suggestion?: string;
+}
+
+export interface PreflightResult {
+  issues: PreflightIssue[];
+  pass: boolean;
+}
+
+export interface TransitionOptions {
+  force?: boolean;
+}
+
 export interface TransitionResult {
   storiesCount: number;
   warnings: string[];
   fixPlanPreserved: boolean;
+  preflightIssues?: PreflightIssue[];
 }

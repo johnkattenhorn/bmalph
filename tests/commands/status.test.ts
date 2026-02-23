@@ -138,7 +138,7 @@ describe("status command", () => {
       expect(output).toContain("/analyst");
     });
 
-    it("suggests /bmalph-implement for phase 3 completed", async () => {
+    it("suggests bmalph implement for phase 3", async () => {
       await setupProject();
       await setupState({ currentPhase: 3, status: "planning" });
 
@@ -146,7 +146,37 @@ describe("status command", () => {
       await runStatus({ projectDir: testDir });
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
-      expect(output).toContain("/bmalph-implement");
+      expect(output).toContain("bmalph implement");
+    });
+
+    it("suggests platform driver path for phase 4 not started", async () => {
+      await setupProject();
+      await setupState({ currentPhase: 4, status: "implementing" });
+
+      const { runStatus } = await import("../../src/commands/status.js");
+      await runStatus({ projectDir: testDir });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("bash .ralph/drivers/claude-code.sh");
+    });
+
+    it("shows full-tier requirement for instructions-only platform at phase 4", async () => {
+      await mkdir(join(testDir, "bmalph"), { recursive: true });
+      await writeFile(
+        join(testDir, "bmalph/config.json"),
+        JSON.stringify({
+          name: "test",
+          platform: "cursor",
+          createdAt: new Date().toISOString(),
+        })
+      );
+      await setupState({ currentPhase: 4, status: "implementing" });
+
+      const { runStatus } = await import("../../src/commands/status.js");
+      await runStatus({ projectDir: testDir });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("full-tier platform");
     });
   });
 

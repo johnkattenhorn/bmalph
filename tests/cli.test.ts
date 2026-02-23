@@ -46,16 +46,16 @@ describe("CLI entry point", () => {
     expect(stdout).toContain("init");
   });
 
-  it("registers init, upgrade, doctor, status commands (not implement, reset)", () => {
+  it("registers init, upgrade, doctor, status, implement commands (not reset)", () => {
     const { stdout } = runCli(["--help"]);
     const commandsSection = stdout.split("Commands:")[1] ?? "";
     expect(commandsSection).toContain("init");
     expect(commandsSection).toContain("upgrade");
     expect(commandsSection).toContain("doctor");
     expect(commandsSection).toContain("status");
+    expect(commandsSection).toContain("implement");
     expect(commandsSection).toContain("help");
     // These commands are slash commands only, not CLI
-    expect(commandsSection).not.toContain("implement");
     expect(commandsSection).not.toContain("reset");
   });
 

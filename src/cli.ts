@@ -6,6 +6,7 @@ import { upgradeCommand } from "./commands/upgrade.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { checkUpdatesCommand } from "./commands/check-updates.js";
 import { statusCommand } from "./commands/status.js";
+import { implementCommand } from "./commands/implement.js";
 import { setVerbose, setQuiet } from "./utils/logger.js";
 import { getPackageVersion } from "./installer.js";
 import { isEnoent } from "./utils/errors.js";
@@ -97,6 +98,14 @@ program
   .option("--json", "Output as JSON")
   .action(async (opts) =>
     statusCommand({ ...opts, projectDir: await resolveAndValidateProjectDir() })
+  );
+
+program
+  .command("implement")
+  .description("Transition BMAD planning artifacts to Ralph implementation format")
+  .option("--force", "Override pre-flight validation errors")
+  .action(async (opts) =>
+    implementCommand({ ...opts, projectDir: await resolveAndValidateProjectDir() })
   );
 
 void program.parseAsync();

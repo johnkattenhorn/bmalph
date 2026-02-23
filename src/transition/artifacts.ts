@@ -22,6 +22,7 @@ export async function findArtifactsDir(projectDir: string): Promise<string | nul
   return null;
 }
 
+/** @deprecated Use `runPreflight` from `./preflight.js` instead. Kept for backward compatibility. */
 export async function validateArtifacts(files: string[], artifactsDir: string): Promise<string[]> {
   const warnings: string[] = [];
 

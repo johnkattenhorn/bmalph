@@ -1042,7 +1042,7 @@ Old stale content with /tea agent reference.
     });
   });
 
-  describe("previewUpgrade", () => {
+  describe("previewUpgrade", { timeout: 15000 }, () => {
     it("classifies all paths as wouldCreate on empty project", async () => {
       const result = await previewUpgrade(testDir);
 

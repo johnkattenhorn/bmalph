@@ -68,6 +68,20 @@ _skip_if_xargs_broken() {
     fi
 }
 
+# Create a mock CLI command in $RALPH_DIR/bin and prepend to PATH.
+# The mock script outputs $stdout (if given) and exits with $exit_code.
+# For argument-aware mocks, write a custom script to $RALPH_DIR/bin/$cmd instead.
+# Usage: _mock_cli <command> [exit_code] [stdout_content]
+_mock_cli() {
+    local cmd=$1 exit_code=${2:-0} stdout=${3:-}
+    mkdir -p "$RALPH_DIR/bin"
+    printf '#!/usr/bin/env bash\n' > "$RALPH_DIR/bin/$cmd"
+    [[ -n "$stdout" ]] && printf 'cat << '"'"'MOCK_OUT'"'"'\n%s\nMOCK_OUT\n' "$stdout" >> "$RALPH_DIR/bin/$cmd"
+    printf 'exit %d\n' "$exit_code" >> "$RALPH_DIR/bin/$cmd"
+    chmod +x "$RALPH_DIR/bin/$cmd"
+    [[ ":$PATH:" != *":$RALPH_DIR/bin:"* ]] && export PATH="$RALPH_DIR/bin:$PATH"
+}
+
 # Load a bats helper from local test_helper or system paths
 _load_helper() {
     local base_dir=$1

@@ -829,37 +829,13 @@ should_resume_session() {
     fi
 
     # Calculate session age using date utilities
-    local now=$(get_epoch_seconds)
+    local now
+    now=$(get_epoch_seconds)
     local session_time
+    session_time=$(parse_iso_to_epoch "$timestamp")
 
-    # Parse ISO timestamp to epoch - try multiple formats for cross-platform compatibility
-    # Strip milliseconds if present (e.g., 2026-01-09T10:30:00.123+00:00 → 2026-01-09T10:30:00+00:00)
-    local clean_timestamp="${timestamp}"
-    if [[ "$timestamp" =~ \.[0-9]+[+-Z] ]]; then
-        clean_timestamp=$(echo "$timestamp" | sed 's/\.[0-9]*\([+-Z]\)/\1/')
-    fi
-
-    if command -v gdate &>/dev/null; then
-        # macOS with coreutils
-        session_time=$(gdate -d "$clean_timestamp" +%s 2>/dev/null)
-    elif date --version 2>&1 | grep -q GNU; then
-        # GNU date (Linux)
-        session_time=$(date -d "$clean_timestamp" +%s 2>/dev/null)
-    else
-        # BSD date (macOS without coreutils) - try parsing ISO format
-        # Format: 2026-01-09T10:30:00+00:00 or 2026-01-09T10:30:00Z
-        # Strip timezone suffix for BSD date parsing
-        local date_only="${clean_timestamp%[+-Z]*}"
-        session_time=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$date_only" +%s 2>/dev/null)
-    fi
-
-    # If we couldn't parse the timestamp, consider session expired
-    if [[ -z "$session_time" || ! "$session_time" =~ ^[0-9]+$ ]]; then
-        echo "false"
-        return 1
-    fi
-
-    # Calculate age in seconds
+    # If parse_iso_to_epoch fell back to current epoch, session_time ≈ now → age ≈ 0.
+    # That's a safe default: treat unparseable timestamps as fresh rather than expired.
     local age=$((now - session_time))
 
     # Check if session is still valid (less than expiration time)

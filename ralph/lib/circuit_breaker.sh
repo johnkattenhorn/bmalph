@@ -43,18 +43,19 @@ init_circuit_breaker() {
     fi
 
     if [[ ! -f "$CB_STATE_FILE" ]]; then
-        cat > "$CB_STATE_FILE" << EOF
-{
-    "state": "$CB_STATE_CLOSED",
-    "last_change": "$(get_iso_timestamp)",
-    "consecutive_no_progress": 0,
-    "consecutive_same_error": 0,
-    "consecutive_permission_denials": 0,
-    "last_progress_loop": 0,
-    "total_opens": 0,
-    "reason": ""
-}
-EOF
+        jq -n \
+            --arg state "$CB_STATE_CLOSED" \
+            --arg last_change "$(get_iso_timestamp)" \
+            '{
+                state: $state,
+                last_change: $last_change,
+                consecutive_no_progress: 0,
+                consecutive_same_error: 0,
+                consecutive_permission_denials: 0,
+                last_progress_loop: 0,
+                total_opens: 0,
+                reason: ""
+            }' > "$CB_STATE_FILE"
     fi
 
     # Ensure history file exists before any transition logging
@@ -81,18 +82,20 @@ EOF
             total_opens=$(jq -r '.total_opens // 0' "$CB_STATE_FILE" 2>/dev/null || echo "0")
             log_circuit_transition "$CB_STATE_OPEN" "$CB_STATE_CLOSED" "Auto-reset on startup (CB_AUTO_RESET=true)" "$current_loop"
 
-            cat > "$CB_STATE_FILE" << EOF
-{
-    "state": "$CB_STATE_CLOSED",
-    "last_change": "$(get_iso_timestamp)",
-    "consecutive_no_progress": 0,
-    "consecutive_same_error": 0,
-    "consecutive_permission_denials": 0,
-    "last_progress_loop": 0,
-    "total_opens": $total_opens,
-    "reason": "Auto-reset on startup"
-}
-EOF
+            jq -n \
+                --arg state "$CB_STATE_CLOSED" \
+                --arg last_change "$(get_iso_timestamp)" \
+                --argjson total_opens "$total_opens" \
+                '{
+                    state: $state,
+                    last_change: $last_change,
+                    consecutive_no_progress: 0,
+                    consecutive_same_error: 0,
+                    consecutive_permission_denials: 0,
+                    last_progress_loop: 0,
+                    total_opens: $total_opens,
+                    reason: "Auto-reset on startup"
+                }' > "$CB_STATE_FILE"
         else
             # Cooldown: check if enough time has elapsed to transition to HALF_OPEN
             local opened_at
@@ -296,20 +299,34 @@ record_loop_result() {
         opened_at=$(echo "$state_data" | jq -r '.opened_at // .last_change // ""' 2>/dev/null)
     fi
 
-    cat > "$CB_STATE_FILE" << EOF
-{
-    "state": "$new_state",
-    "last_change": "$(get_iso_timestamp)",
-    "consecutive_no_progress": $consecutive_no_progress,
-    "consecutive_same_error": $consecutive_same_error,
-    "consecutive_permission_denials": $consecutive_permission_denials,
-    "last_progress_loop": $last_progress_loop,
-    "total_opens": $total_opens,
-    "reason": "$reason",
-    "current_loop": $loop_number$(if [[ -n "$opened_at" ]]; then echo ",
-    \"opened_at\": \"$opened_at\""; fi)
-}
-EOF
+    jq -n \
+        --arg state "$new_state" \
+        --arg last_change "$(get_iso_timestamp)" \
+        --argjson consecutive_no_progress "$consecutive_no_progress" \
+        --argjson consecutive_same_error "$consecutive_same_error" \
+        --argjson consecutive_permission_denials "$consecutive_permission_denials" \
+        --argjson last_progress_loop "$last_progress_loop" \
+        --argjson total_opens "$total_opens" \
+        --arg reason "$reason" \
+        --argjson current_loop "$loop_number" \
+        '{
+            state: $state,
+            last_change: $last_change,
+            consecutive_no_progress: $consecutive_no_progress,
+            consecutive_same_error: $consecutive_same_error,
+            consecutive_permission_denials: $consecutive_permission_denials,
+            last_progress_loop: $last_progress_loop,
+            total_opens: $total_opens,
+            reason: $reason,
+            current_loop: $current_loop
+        }' > "$CB_STATE_FILE"
+
+    # Add opened_at if set (entering or staying in OPEN state)
+    if [[ -n "$opened_at" ]]; then
+        local tmp
+        tmp=$(jq --arg opened_at "$opened_at" '. + {opened_at: $opened_at}' "$CB_STATE_FILE")
+        echo "$tmp" > "$CB_STATE_FILE"
+    fi
 
     # Log state transition
     if [[ "$new_state" != "$current_state" ]]; then
@@ -331,15 +348,23 @@ log_circuit_transition() {
     local reason=$3
     local loop_number=$4
 
-    local history=$(cat "$CB_HISTORY_FILE")
-    local transition="{
-        \"timestamp\": \"$(get_iso_timestamp)\",
-        \"loop\": $loop_number,
-        \"from_state\": \"$from_state\",
-        \"to_state\": \"$to_state\",
-        \"reason\": \"$reason\"
-    }"
+    local transition
+    transition=$(jq -n -c \
+        --arg timestamp "$(get_iso_timestamp)" \
+        --argjson loop "$loop_number" \
+        --arg from_state "$from_state" \
+        --arg to_state "$to_state" \
+        --arg reason "$reason" \
+        '{
+            timestamp: $timestamp,
+            loop: $loop,
+            from_state: $from_state,
+            to_state: $to_state,
+            reason: $reason
+        }')
 
+    local history
+    history=$(cat "$CB_HISTORY_FILE")
     history=$(echo "$history" | jq ". += [$transition]")
     echo "$history" > "$CB_HISTORY_FILE"
 
@@ -406,18 +431,20 @@ show_circuit_status() {
 reset_circuit_breaker() {
     local reason=${1:-"Manual reset"}
 
-    cat > "$CB_STATE_FILE" << EOF
-{
-    "state": "$CB_STATE_CLOSED",
-    "last_change": "$(get_iso_timestamp)",
-    "consecutive_no_progress": 0,
-    "consecutive_same_error": 0,
-    "consecutive_permission_denials": 0,
-    "last_progress_loop": 0,
-    "total_opens": 0,
-    "reason": "$reason"
-}
-EOF
+    jq -n \
+        --arg state "$CB_STATE_CLOSED" \
+        --arg last_change "$(get_iso_timestamp)" \
+        --arg reason "$reason" \
+        '{
+            state: $state,
+            last_change: $last_change,
+            consecutive_no_progress: 0,
+            consecutive_same_error: 0,
+            consecutive_permission_denials: 0,
+            last_progress_loop: 0,
+            total_opens: 0,
+            reason: $reason
+        }' > "$CB_STATE_FILE"
 
     echo -e "${GREEN}✅ Circuit breaker reset to CLOSED state${NC}"
 }

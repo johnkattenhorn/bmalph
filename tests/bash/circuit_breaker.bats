@@ -387,3 +387,62 @@ teardown() {
     run jq -r '.total_opens' "$CB_STATE_FILE"
     assert_output "1"
 }
+
+# ===========================================================================
+# JSON safety: special characters in string fields
+# ===========================================================================
+
+@test "reset_circuit_breaker preserves reason with double quotes" {
+    init_circuit_breaker
+    reset_circuit_breaker 'Reset for "testing" purposes' > /dev/null 2>&1
+
+    # State file must be valid JSON
+    run jq empty "$CB_STATE_FILE"
+    assert_success
+
+    run jq -r '.reason' "$CB_STATE_FILE"
+    assert_output 'Reset for "testing" purposes'
+}
+
+@test "reset_circuit_breaker preserves reason with backslash" {
+    init_circuit_breaker
+    reset_circuit_breaker 'Path: C:\Users\test' > /dev/null 2>&1
+
+    run jq empty "$CB_STATE_FILE"
+    assert_success
+
+    run jq -r '.reason' "$CB_STATE_FILE"
+    assert_output 'Path: C:\Users\test'
+}
+
+@test "log_circuit_transition preserves reason with newline" {
+    init_circuit_breaker
+
+    local reason=$'Line one\nLine two'
+    log_circuit_transition "CLOSED" "HALF_OPEN" "$reason" 1 > /dev/null 2>&1
+
+    # History file must be valid JSON
+    run jq empty "$CB_HISTORY_FILE"
+    assert_success
+
+    # Verify both lines survived the JSON round-trip
+    run jq -r '.[0].reason' "$CB_HISTORY_FILE"
+    assert_output --partial "Line one"
+    assert_output --partial "Line two"
+
+    # Verify the reason contains a literal newline (not escaped \\n)
+    run jq -r '.[0].reason | test("Line one\nLine two")' "$CB_HISTORY_FILE"
+    assert_output "true"
+}
+
+@test "log_circuit_transition preserves reason with double quotes" {
+    init_circuit_breaker
+
+    log_circuit_transition "CLOSED" "OPEN" 'Error: "file not found"' 3 > /dev/null 2>&1
+
+    run jq empty "$CB_HISTORY_FILE"
+    assert_success
+
+    run jq -r '.[0].reason' "$CB_HISTORY_FILE"
+    assert_output 'Error: "file not found"'
+}

@@ -404,18 +404,6 @@ can_make_call() {
     fi
 }
 
-# Increment call counter
-increment_call_counter() {
-    local calls_made=0
-    if [[ -f "$CALL_COUNT_FILE" ]]; then
-        calls_made=$(cat "$CALL_COUNT_FILE")
-    fi
-    
-    ((calls_made++))
-    echo "$calls_made" > "$CALL_COUNT_FILE"
-    echo "$calls_made"
-}
-
 # Wait for rate limit reset with countdown
 wait_for_reset() {
     local calls_made=$(cat "$CALL_COUNT_FILE" 2>/dev/null || echo "0")
@@ -661,10 +649,9 @@ build_loop_context() {
     echo "${context:0:500}"
 }
 
-# Get session file age in hours (cross-platform)
-# Returns: age in hours on stdout, or -1 if stat fails
-# Note: Returns 0 for files less than 1 hour old
-get_session_file_age_hours() {
+# Get session file age in seconds (cross-platform)
+# Returns: age in seconds on stdout, or -1 if stat fails
+get_session_file_age_seconds() {
     local file=$1
 
     if [[ ! -f "$file" ]]; then
@@ -700,9 +687,8 @@ get_session_file_age_hours() {
     current_time=$(date +%s)
 
     local age_seconds=$((current_time - file_mtime))
-    local age_hours=$((age_seconds / 3600))
 
-    echo "$age_hours"
+    echo "$age_seconds"
 }
 
 # Initialize or resume Claude session (with expiration check)
@@ -723,20 +709,23 @@ get_session_file_age_hours() {
 init_claude_session() {
     if [[ -f "$CLAUDE_SESSION_FILE" ]]; then
         # Check session age
-        local age_hours
-        age_hours=$(get_session_file_age_hours "$CLAUDE_SESSION_FILE")
+        local age_seconds
+        age_seconds=$(get_session_file_age_seconds "$CLAUDE_SESSION_FILE")
 
         # Handle stat failure (-1) - treat as needing new session
         # Don't expire sessions when we can't determine age
-        if [[ $age_hours -eq -1 ]]; then
+        if [[ $age_seconds -eq -1 ]]; then
             log_status "WARN" "Could not determine session age, starting new session"
             rm -f "$CLAUDE_SESSION_FILE"
             echo ""
             return 0
         fi
 
+        local expiry_seconds=$((CLAUDE_SESSION_EXPIRY_HOURS * 3600))
+
         # Check if session has expired
-        if [[ $age_hours -ge $CLAUDE_SESSION_EXPIRY_HOURS ]]; then
+        if [[ $age_seconds -ge $expiry_seconds ]]; then
+            local age_hours=$((age_seconds / 3600))
             log_status "INFO" "Session expired (${age_hours}h old, max ${CLAUDE_SESSION_EXPIRY_HOURS}h), starting new session"
             rm -f "$CLAUDE_SESSION_FILE"
             echo ""
@@ -746,6 +735,7 @@ init_claude_session() {
         # Session is valid, try to read it
         local session_id=$(cat "$CLAUDE_SESSION_FILE" 2>/dev/null)
         if [[ -n "$session_id" ]]; then
+            local age_hours=$((age_seconds / 3600))
             log_status "INFO" "Resuming Claude session: ${session_id:0:20}... (${age_hours}h old)"
             echo "$session_id"
             return 0

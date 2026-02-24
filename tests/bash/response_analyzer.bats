@@ -441,6 +441,30 @@ EOF
     assert_failure
 }
 
+@test "should_resume_session returns false at exactly 24h boundary" {
+    local boundary_time
+    boundary_time=$(_minutes_ago_iso $((24 * 60)))  # exactly 24 hours ago
+
+    jq -n --arg sid "session-boundary" --arg ts "$boundary_time" \
+        '{session_id: $sid, timestamp: $ts}' > "$SESSION_FILE"
+
+    run should_resume_session
+    assert_output "false"
+    assert_failure
+}
+
+@test "should_resume_session returns true at 23h59m" {
+    local almost_time
+    almost_time=$(_minutes_ago_iso $((23 * 60 + 59)))  # 23h59m ago
+
+    jq -n --arg sid "session-almost" --arg ts "$almost_time" \
+        '{session_id: $sid, timestamp: $ts}' > "$SESSION_FILE"
+
+    run should_resume_session
+    assert_output "true"
+    assert_success
+}
+
 # ===========================================================================
 # update_exit_signals
 # ===========================================================================

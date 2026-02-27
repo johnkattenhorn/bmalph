@@ -260,6 +260,7 @@ const BASH_STATUS_MAP: Record<string, RalphLoopStatus["status"]> = {
   stopped: "blocked",
   completed: "completed",
   success: "completed",
+  graceful_exit: "completed",
 };
 
 export function normalizeRalphStatus(data: unknown): RalphLoopStatus {

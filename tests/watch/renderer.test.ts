@@ -50,6 +50,7 @@ function makeState(overrides: Partial<DashboardState> = {}): DashboardState {
     execution: null,
     session: null,
     recentLogs: [],
+    completionMismatch: false,
     lastUpdated: new Date("2026-02-25T14:25:15Z"),
     ...overrides,
   };

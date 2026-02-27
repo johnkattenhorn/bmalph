@@ -2,6 +2,10 @@
 
 # Ralph Import - Convert PRDs to Ralph format using Claude Code
 # Version: 0.9.8 - Modern CLI support with JSON output parsing
+#
+# DEPRECATED: This script is from standalone Ralph and references `ralph-setup`
+# which does not exist in bmalph. Use `bmalph implement` for PRD-to-Ralph
+# transition instead. This file is bundled for backward compatibility only.
 set -e
 
 # Configuration
@@ -281,8 +285,9 @@ HELPEOF
 # Check dependencies
 check_dependencies() {
     if ! command -v ralph-setup &> /dev/null; then
-        log "ERROR" "Ralph not installed. Run ./install.sh first"
-        exit 1
+        log "WARN" "ralph-setup not found. If using bmalph, run 'bmalph init' instead."
+        log "WARN" "This script is deprecated — use 'bmalph implement' for PRD conversion."
+        return 1
     fi
 
     if ! command -v jq &> /dev/null; then

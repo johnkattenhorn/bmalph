@@ -1,6 +1,10 @@
 #!/bin/bash
 
 # Ralph Status Monitor - Live terminal dashboard for the Ralph loop
+#
+# DEPRECATED: Use `bmalph watch` instead, which provides a more capable
+# TypeScript-based live dashboard with full test coverage.
+# This script is kept for backward compatibility in tmux sessions.
 set -e
 
 STATUS_FILE=".ralph/status.json"

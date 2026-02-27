@@ -504,4 +504,9 @@ describe("normalizeRalphStatus", () => {
     expect(result.loopCount).toBe(12);
     expect(result.status).toBe("completed");
   });
+
+  it("maps bash status 'graceful_exit' to 'completed'", () => {
+    const result = normalizeRalphStatus({ loop_count: 15, status: "graceful_exit" });
+    expect(result.status).toBe("completed");
+  });
 });

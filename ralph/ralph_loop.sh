@@ -239,7 +239,10 @@ setup_tmux_session() {
     tmux send-keys -t "$session_name:${base_win}.1" "tail -f '$project_dir/$LIVE_LOG_FILE'" Enter
 
     # Right-bottom pane (pane 2): Ralph status monitor
-    if command -v ralph-monitor &> /dev/null; then
+    # Prefer bmalph watch (TypeScript, fully tested) over legacy ralph_monitor.sh
+    if command -v bmalph &> /dev/null; then
+        tmux send-keys -t "$session_name:${base_win}.2" "bmalph watch" Enter
+    elif command -v ralph-monitor &> /dev/null; then
         tmux send-keys -t "$session_name:${base_win}.2" "ralph-monitor" Enter
     else
         tmux send-keys -t "$session_name:${base_win}.2" "'$ralph_home/ralph_monitor.sh'" Enter
@@ -1651,6 +1654,9 @@ Examples:
 HELPEOF
 }
 
+# Only parse arguments and run main when executed directly, not when sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -1758,14 +1764,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Only execute when run directly, not when sourced
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    # If tmux mode requested, set it up
-    if [[ "$USE_TMUX" == "true" ]]; then
-        check_tmux_available
-        setup_tmux_session
-    fi
-
-    # Start the main loop
-    main
+# If tmux mode requested, set it up
+if [[ "$USE_TMUX" == "true" ]]; then
+    check_tmux_available
+    setup_tmux_session
 fi
+
+# Start the main loop
+main
+
+fi  # end: BASH_SOURCE[0] == $0

@@ -534,4 +534,63 @@ describe("state-reader", () => {
       expect(state.recentLogs).toEqual([]);
     });
   });
+
+  describe("completionMismatch", () => {
+    it("is true when Ralph status is completed", async () => {
+      testDir = makeTmpDir();
+      const ralphDir = join(testDir, ".ralph");
+      await mkdir(ralphDir, { recursive: true });
+      await writeJson(join(ralphDir, "status.json"), {
+        loop_count: 15,
+        status: "completed",
+        tasks_completed: 10,
+        tasks_total: 10,
+      });
+
+      const state = await readDashboardState(testDir);
+
+      expect(state.completionMismatch).toBe(true);
+    });
+
+    it("is true when Ralph status is graceful_exit", async () => {
+      testDir = makeTmpDir();
+      const ralphDir = join(testDir, ".ralph");
+      await mkdir(ralphDir, { recursive: true });
+      await writeJson(join(ralphDir, "status.json"), {
+        loop_count: 12,
+        status: "graceful_exit",
+        tasks_completed: 8,
+        tasks_total: 8,
+      });
+
+      const state = await readDashboardState(testDir);
+
+      expect(state.completionMismatch).toBe(true);
+    });
+
+    it("is false when Ralph is still running", async () => {
+      testDir = makeTmpDir();
+      const ralphDir = join(testDir, ".ralph");
+      await mkdir(ralphDir, { recursive: true });
+      await writeJson(join(ralphDir, "status.json"), {
+        loop_count: 5,
+        status: "running",
+        tasks_completed: 3,
+        tasks_total: 10,
+      });
+
+      const state = await readDashboardState(testDir);
+
+      expect(state.completionMismatch).toBe(false);
+    });
+
+    it("is false when no Ralph status exists", async () => {
+      testDir = makeTmpDir();
+      await mkdir(testDir, { recursive: true });
+
+      const state = await readDashboardState(testDir);
+
+      expect(state.completionMismatch).toBe(false);
+    });
+  });
 });

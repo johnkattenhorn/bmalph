@@ -35,6 +35,8 @@ export async function readDashboardState(projectDir: string): Promise<DashboardS
       readRecentLogs(projectDir),
     ]);
 
+  const completionMismatch = loop !== null && loop.status === "completed";
+
   return {
     loop,
     circuitBreaker,
@@ -43,6 +45,7 @@ export async function readDashboardState(projectDir: string): Promise<DashboardS
     execution,
     session,
     recentLogs,
+    completionMismatch,
     lastUpdated: new Date(),
   };
 }

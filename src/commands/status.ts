@@ -29,6 +29,7 @@ interface StatusOutput {
     missing: string[];
   };
   nextAction?: string;
+  completionMismatch?: boolean;
 }
 
 export async function statusCommand(options: StatusOptions): Promise<void> {
@@ -81,6 +82,13 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       ? artifactScan.nextAction
       : getNextAction(phase, status, ralphStatus, platform);
 
+  // Detect when Ralph completed but bmalph state hasn't caught up
+  const completionMismatch =
+    phase === 4 &&
+    status === "implementing" &&
+    ralphStatus !== null &&
+    ralphStatus.status === "completed";
+
   if (options.json) {
     const output: StatusOutput = {
       phase,
@@ -108,6 +116,10 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
     if (nextAction) {
       output.nextAction = nextAction;
+    }
+
+    if (completionMismatch) {
+      output.completionMismatch = true;
     }
 
     console.log(JSON.stringify(output, null, 2));
@@ -145,7 +157,11 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     console.log(`    ${chalk.cyan("Status:")} ${chalk.dim("not started")}`);
   }
 
-  if (nextAction) {
+  if (completionMismatch) {
+    console.log("");
+    console.log(chalk.green("  Ralph has completed all tasks."));
+    console.log(`  ${chalk.cyan("Next:")} Review changes and update project phase`);
+  } else if (nextAction) {
     console.log("");
     console.log(`  ${chalk.cyan("Next:")} ${nextAction}`);
   }

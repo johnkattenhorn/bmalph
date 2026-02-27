@@ -343,4 +343,93 @@ describe("status command", () => {
       expect(output).toContain("/architect");
     });
   });
+
+  describe("completion mismatch detection", () => {
+    it("shows completion message when Ralph completed but bmalph still implementing", async () => {
+      await setupProject();
+      await setupState({ currentPhase: 4, status: "implementing" });
+      await setupRalphStatus({
+        loopCount: 15,
+        status: "completed",
+        tasksCompleted: 10,
+        tasksTotal: 10,
+      });
+
+      const { runStatus } = await import("../../src/commands/status.js");
+      await runStatus({ projectDir: testDir });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Ralph has completed all tasks");
+    });
+
+    it("suggests reviewing changes as next action when Ralph completed", async () => {
+      await setupProject();
+      await setupState({ currentPhase: 4, status: "implementing" });
+      await setupRalphStatus({
+        loopCount: 15,
+        status: "completed",
+        tasksCompleted: 10,
+        tasksTotal: 10,
+      });
+
+      const { runStatus } = await import("../../src/commands/status.js");
+      await runStatus({ projectDir: testDir });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Review changes");
+    });
+
+    it("includes completion mismatch in JSON output when Ralph completed but bmalph implementing", async () => {
+      await setupProject();
+      await setupState({ currentPhase: 4, status: "implementing" });
+      await setupRalphStatus({
+        loopCount: 12,
+        status: "completed",
+        tasksCompleted: 8,
+        tasksTotal: 8,
+      });
+
+      const { runStatus } = await import("../../src/commands/status.js");
+      await runStatus({ json: true, projectDir: testDir });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      const parsed = JSON.parse(output);
+      expect(parsed.completionMismatch).toBe(true);
+    });
+
+    it("does not flag completion mismatch in JSON when bmalph status is already completed", async () => {
+      await setupProject();
+      await setupState({ currentPhase: 4, status: "completed" });
+      await setupRalphStatus({
+        loopCount: 12,
+        status: "completed",
+        tasksCompleted: 8,
+        tasksTotal: 8,
+      });
+
+      const { runStatus } = await import("../../src/commands/status.js");
+      await runStatus({ json: true, projectDir: testDir });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      const parsed = JSON.parse(output);
+      expect(parsed.completionMismatch).toBeUndefined();
+    });
+
+    it("does not show completion message when Ralph is still running", async () => {
+      await setupProject();
+      await setupState({ currentPhase: 4, status: "implementing" });
+      await setupRalphStatus({
+        loopCount: 5,
+        status: "running",
+        tasksCompleted: 3,
+        tasksTotal: 10,
+      });
+
+      const { runStatus } = await import("../../src/commands/status.js");
+      await runStatus({ projectDir: testDir });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("Ralph has completed all tasks");
+    });
+  });
 });

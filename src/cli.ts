@@ -131,7 +131,7 @@ program
 program
   .command("run")
   .description("Start Ralph loop with live dashboard")
-  .option("--driver <platform>", "Override platform driver (claude-code, codex)")
+  .option("--driver <platform>", "Override platform driver (claude-code, codex, copilot)")
   .option("--interval <ms>", "Dashboard refresh interval in milliseconds (default: 2000)")
   .option("--no-dashboard", "Run Ralph without the dashboard overlay")
   .action(async (opts) =>

@@ -10,6 +10,7 @@ vi.mock("../../src/utils/config.js", () => ({
 vi.mock("../../src/platform/registry.js", () => ({
   getPlatform: vi.fn(),
   isPlatformId: vi.fn(),
+  getFullTierPlatformNames: vi.fn(() => "Claude Code, OpenAI Codex, GitHub Copilot CLI"),
 }));
 
 vi.mock("../../src/run/ralph-process.js", () => ({
@@ -104,6 +105,54 @@ describe("runCommand", () => {
       expect(process.exitCode).toBe(1);
       const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(errorOutput).toContain("full-tier");
+    });
+
+    it("accepts copilot as a full-tier platform", async () => {
+      const { readConfig } = await import("../../src/utils/config.js");
+      const { isPlatformId, getPlatform } = await import("../../src/platform/registry.js");
+      const { validateBashAvailable, validateRalphLoop, spawnRalphLoop } =
+        await import("../../src/run/ralph-process.js");
+      const { startRunDashboard } = await import("../../src/run/run-dashboard.js");
+
+      vi.mocked(readConfig).mockResolvedValue({
+        name: "test",
+        description: "",
+        createdAt: "2026-02-28",
+        platform: "copilot",
+      });
+      vi.mocked(isPlatformId).mockReturnValue(true);
+      vi.mocked(getPlatform).mockReturnValue(
+        mockPlatform({
+          id: "copilot",
+          displayName: "GitHub Copilot CLI",
+          tier: "full",
+          experimental: true,
+        })
+      );
+      vi.mocked(validateBashAvailable).mockResolvedValue(undefined);
+      vi.mocked(validateRalphLoop).mockResolvedValue(undefined);
+      vi.mocked(spawnRalphLoop).mockReturnValue({
+        child: { pid: 123 },
+        state: "running",
+        exitCode: null,
+        kill: vi.fn(),
+        detach: vi.fn(),
+        onExit: vi.fn(),
+      } as never);
+      vi.mocked(startRunDashboard).mockResolvedValue(undefined);
+
+      const { runCommand } = await import("../../src/commands/run.js");
+      await runCommand({
+        projectDir: "/test/project",
+        driver: "copilot",
+        interval: "2000",
+        dashboard: true,
+      });
+
+      expect(process.exitCode).toBeUndefined();
+      expect(spawnRalphLoop).toHaveBeenCalledWith("/test/project", "copilot", {
+        inheritStdio: false,
+      });
     });
 
     it("fails when interval is below 500ms", async () => {

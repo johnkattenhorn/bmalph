@@ -13,7 +13,7 @@ import { validateProjectName } from "../utils/validate.js";
 import { withErrorHandling } from "../utils/errors.js";
 import { exists } from "../utils/file-system.js";
 import { join } from "node:path";
-import { isPlatformId, getPlatform } from "../platform/registry.js";
+import { isPlatformId, getPlatform, getAllPlatforms } from "../platform/registry.js";
 import { detectPlatform } from "../platform/detect.js";
 import type { Platform, PlatformId } from "../platform/types.js";
 
@@ -56,14 +56,10 @@ async function resolvePlatform(projectDir: string, explicit?: string): Promise<P
 
   // 3. Interactive prompt if multiple candidates or none detected
   if (process.stdin.isTTY) {
-    const choices: Array<{ name: string; value: PlatformId }> = [
-      { name: "Claude Code", value: "claude-code" },
-      { name: "OpenAI Codex", value: "codex" },
-      { name: "Cursor", value: "cursor" },
-      { name: "Windsurf", value: "windsurf" },
-      { name: "GitHub Copilot", value: "copilot" },
-      { name: "Aider", value: "aider" },
-    ];
+    const choices: Array<{ name: string; value: PlatformId }> = getAllPlatforms().map((p) => ({
+      name: p.experimental ? `${p.displayName} (experimental)` : p.displayName,
+      value: p.id,
+    }));
 
     const platformId = await select({
       message: "Which platform are you using?",
@@ -160,7 +156,10 @@ async function runInit(options: InitOptions): Promise<void> {
 
   console.log(chalk.green("\nbmalph initialized successfully!"));
   console.log(`\n  Project: ${chalk.bold(config.name)}`);
-  console.log(`  Platform: ${chalk.bold(platform.displayName)}`);
+  const platformLabel = platform.experimental
+    ? `${platform.displayName} (experimental)`
+    : platform.displayName;
+  console.log(`  Platform: ${chalk.bold(platformLabel)}`);
   console.log(`\nInstalled:`);
   console.log(`  _bmad/             BMAD agents and workflows`);
   console.log(`  .ralph/            Ralph loop and templates`);
@@ -175,8 +174,10 @@ async function runInit(options: InitOptions): Promise<void> {
     console.log(
       `  Use ${chalk.cyan("/bmalph")} in Claude Code to see your current phase and commands.`
     );
-  } else if (platform.id === "codex") {
-    console.log(`  Ask Codex to ${chalk.cyan("run the BMAD master agent")} to navigate phases.`);
+  } else if (platform.tier === "full") {
+    console.log(
+      `  Ask ${platform.displayName} to ${chalk.cyan("run the BMAD master agent")} to navigate phases.`
+    );
   } else {
     console.log(
       `  Ask your AI assistant to ${chalk.cyan("use the BMAD agents")} defined in ${chalk.cyan(platform.instructionsFile)}.`

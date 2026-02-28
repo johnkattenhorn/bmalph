@@ -3,6 +3,7 @@ import { readConfig } from "../utils/config.js";
 import { readState, readRalphStatus, getPhaseLabel, getPhaseInfo } from "../utils/state.js";
 import { withErrorHandling } from "../utils/errors.js";
 import { resolveProjectPlatform } from "../platform/resolve.js";
+import { getFullTierPlatformNames } from "../platform/registry.js";
 import { scanProjectArtifacts } from "../transition/artifact-scan.js";
 import type { Platform } from "../platform/types.js";
 import type { ProjectArtifactScan, ScannedArtifact } from "../transition/artifact-scan.js";
@@ -260,7 +261,7 @@ function getNextAction(
         if (platform.tier === "full") {
           return "Start Ralph loop with: bmalph run";
         }
-        return "Ralph requires a full-tier platform (Claude Code or Codex)";
+        return `Ralph requires a full-tier platform (${getFullTierPlatformNames()})`;
       }
       if (ralphStatus.status === "blocked") {
         return "Review Ralph logs: bmalph doctor";

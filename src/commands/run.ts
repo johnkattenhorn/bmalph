@@ -1,6 +1,7 @@
+import chalk from "chalk";
 import { readConfig } from "../utils/config.js";
 import { withErrorHandling } from "../utils/errors.js";
-import { isPlatformId, getPlatform } from "../platform/registry.js";
+import { isPlatformId, getPlatform, getFullTierPlatformNames } from "../platform/registry.js";
 import { validateBashAvailable, validateRalphLoop, spawnRalphLoop } from "../run/ralph-process.js";
 import { startRunDashboard } from "../run/run-dashboard.js";
 import { parseInterval } from "../utils/validate.js";
@@ -28,9 +29,13 @@ async function executeRun(options: RunCommandOptions): Promise<void> {
   const platform = resolvePlatform(options.driver, config.platform);
   if (platform.tier !== "full") {
     throw new Error(
-      `Ralph requires a full-tier platform (claude-code or codex). ` +
+      `Ralph requires a full-tier platform (${getFullTierPlatformNames()}). ` +
         `Current: ${platform.displayName}`
     );
+  }
+
+  if (platform.experimental) {
+    console.log(chalk.yellow(`Warning: ${platform.displayName} support is experimental`));
   }
 
   const interval = parseInterval(options.interval);

@@ -4,14 +4,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { cursorPlatform } from "../../src/platform/cursor.js";
 import { windsurfPlatform } from "../../src/platform/windsurf.js";
-import { copilotPlatform } from "../../src/platform/copilot.js";
 import { aiderPlatform } from "../../src/platform/aider.js";
 import type { Platform } from "../../src/platform/types.js";
 
 const idePlatforms: Array<{ platform: Platform; expectedFile: string }> = [
   { platform: cursorPlatform, expectedFile: ".cursor/rules/bmad.mdc" },
   { platform: windsurfPlatform, expectedFile: ".windsurf/rules/bmad.md" },
-  { platform: copilotPlatform, expectedFile: ".github/copilot-instructions.md" },
   { platform: aiderPlatform, expectedFile: "CONVENTIONS.md" },
 ];
 

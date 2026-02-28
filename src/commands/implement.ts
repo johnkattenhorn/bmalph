@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { runTransition } from "../transition/orchestration.js";
 import { withErrorHandling } from "../utils/errors.js";
 import { resolveProjectPlatform } from "../platform/resolve.js";
+import { getFullTierPlatformNames } from "../platform/registry.js";
 import type { PreflightIssue } from "../transition/types.js";
 
 interface ImplementOptions {
@@ -84,7 +85,7 @@ async function runImplement(options: ImplementOptions): Promise<void> {
     console.log(`    bmalph run`);
   } else {
     console.log(
-      `Ralph requires a full-tier platform (claude-code or codex). ` +
+      `Ralph requires a full-tier platform (${getFullTierPlatformNames()}). ` +
         `Current platform: ${platform.displayName}`
     );
   }

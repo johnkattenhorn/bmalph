@@ -30,6 +30,7 @@ export interface Platform {
   readonly id: PlatformId;
   readonly displayName: string;
   readonly tier: PlatformTier;
+  readonly experimental?: boolean;
   readonly instructionsFile: string;
   readonly commandDelivery: CommandDelivery;
   readonly instructionsSectionMarker: string;

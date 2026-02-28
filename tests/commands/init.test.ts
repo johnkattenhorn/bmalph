@@ -39,6 +39,14 @@ vi.mock("../../src/platform/registry.js", () => ({
     generateInstructionsSnippet: () => "## BMAD-METHOD Integration\n\nSnippet content",
     getDoctorChecks: () => [],
   })),
+  getAllPlatforms: vi.fn(() => [
+    { id: "claude-code", displayName: "Claude Code", tier: "full" },
+    { id: "codex", displayName: "OpenAI Codex", tier: "full" },
+    { id: "cursor", displayName: "Cursor", tier: "instructions-only" },
+    { id: "windsurf", displayName: "Windsurf", tier: "instructions-only" },
+    { id: "copilot", displayName: "GitHub Copilot CLI", tier: "full", experimental: true },
+    { id: "aider", displayName: "Aider", tier: "instructions-only" },
+  ]),
 }));
 
 vi.mock("../../src/utils/file-system.js", () => ({

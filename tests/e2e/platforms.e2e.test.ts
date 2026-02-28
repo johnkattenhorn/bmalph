@@ -18,11 +18,31 @@ import {
  * Excludes claude-code (already covered by existing E2E tests).
  */
 const PLATFORM_CONFIGS: PlatformAssertionConfig[] = [
-  { id: "codex", instructionsFile: "AGENTS.md", commandDelivery: "inline" },
-  { id: "cursor", instructionsFile: ".cursor/rules/bmad.mdc", commandDelivery: "none" },
-  { id: "windsurf", instructionsFile: ".windsurf/rules/bmad.md", commandDelivery: "none" },
-  { id: "copilot", instructionsFile: ".github/copilot-instructions.md", commandDelivery: "none" },
-  { id: "aider", instructionsFile: "CONVENTIONS.md", commandDelivery: "none" },
+  { id: "codex", instructionsFile: "AGENTS.md", commandDelivery: "inline", tier: "full" },
+  {
+    id: "cursor",
+    instructionsFile: ".cursor/rules/bmad.mdc",
+    commandDelivery: "none",
+    tier: "instructions-only",
+  },
+  {
+    id: "windsurf",
+    instructionsFile: ".windsurf/rules/bmad.md",
+    commandDelivery: "none",
+    tier: "instructions-only",
+  },
+  {
+    id: "copilot",
+    instructionsFile: ".github/copilot-instructions.md",
+    commandDelivery: "none",
+    tier: "full",
+  },
+  {
+    id: "aider",
+    instructionsFile: "CONVENTIONS.md",
+    commandDelivery: "none",
+    tier: "instructions-only",
+  },
 ];
 
 /** Doctor check labels per platform (from platform definitions) */
@@ -140,7 +160,9 @@ describe("multi-platform e2e", { timeout: 60000 }, () => {
   });
 
   describe("instructions-only platforms", () => {
-    const instructionsOnlyPlatforms = PLATFORM_CONFIGS.filter((p) => p.commandDelivery === "none");
+    const instructionsOnlyPlatforms = PLATFORM_CONFIGS.filter(
+      (p) => p.tier === "instructions-only"
+    );
 
     it.each(instructionsOnlyPlatforms)("$id: no command delivery artifacts", async (platform) => {
       project = await createTestProject();
@@ -176,6 +198,47 @@ describe("multi-platform e2e", { timeout: 60000 }, () => {
         expect(content).toContain("not supported on this platform");
       }
     );
+  });
+
+  describe("copilot-specific", () => {
+    it("copilot instructions reference Phase 4 and Ralph", async () => {
+      project = await createTestProject();
+
+      await runInit(project.path, "test-project", "E2E test", "copilot");
+
+      const content = await readFile(
+        join(project.path, ".github/copilot-instructions.md"),
+        "utf-8"
+      );
+
+      expect(content).toContain("4. Implementation");
+      expect(content).toContain("Ralph");
+      expect(content).not.toContain("not supported on this platform");
+    });
+
+    it("copilot has no command delivery artifacts", async () => {
+      project = await createTestProject();
+
+      await runInit(project.path, "test-project", "E2E test", "copilot");
+
+      await expectFileNotExists(join(project.path, ".claude/commands"));
+      await expectFileNotContains(
+        join(project.path, ".github/copilot-instructions.md"),
+        "## BMAD Commands"
+      );
+    });
+
+    it(".ralphrc has correct platform driver", async () => {
+      project = await createTestProject();
+
+      await runInit(project.path, "test-project", "E2E test", "copilot");
+
+      await expectFileExists(join(project.path, ".ralph/.ralphrc"));
+      await expectFileContains(
+        join(project.path, ".ralph/.ralphrc"),
+        'PLATFORM_DRIVER="${PLATFORM_DRIVER:-copilot}"'
+      );
+    });
   });
 
   describe("_bmad/config.yaml platform field", () => {

@@ -110,6 +110,7 @@ export interface PlatformAssertionConfig {
   id: string;
   instructionsFile: string;
   commandDelivery: "directory" | "inline" | "none";
+  tier: "full" | "instructions-only";
 }
 
 /**

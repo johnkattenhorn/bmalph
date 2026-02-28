@@ -30,3 +30,10 @@ export function getAllPlatforms(): Platform[] {
 export function isPlatformId(value: string): value is PlatformId {
   return PLATFORMS.has(value as PlatformId);
 }
+
+export function getFullTierPlatformNames(): string {
+  return getAllPlatforms()
+    .filter((p) => p.tier === "full")
+    .map((p) => p.displayName)
+    .join(", ");
+}

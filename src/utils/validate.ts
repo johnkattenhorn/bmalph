@@ -328,9 +328,12 @@ export function validateProjectName(name: string): string {
 }
 
 export function parseInterval(value?: string): number {
-  const interval = value ? parseInt(value, 10) : DEFAULT_INTERVAL_MS;
+  if (value !== undefined && !Number.isFinite(Number(value))) {
+    throw new Error(`Interval must be a number >= ${MIN_INTERVAL_MS} (milliseconds)`);
+  }
+  const interval = value !== undefined ? Number(value) : DEFAULT_INTERVAL_MS;
   if (isNaN(interval) || interval < MIN_INTERVAL_MS) {
     throw new Error(`Interval must be a number >= ${MIN_INTERVAL_MS} (milliseconds)`);
   }
-  return interval;
+  return Math.trunc(interval);
 }

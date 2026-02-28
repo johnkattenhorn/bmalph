@@ -13,7 +13,7 @@ vi.mock("../../src/watch/renderer.js", () => ({
 import type { DashboardState } from "../../src/watch/types.js";
 import { readDashboardState } from "../../src/watch/state-reader.js";
 import { renderDashboard } from "../../src/watch/renderer.js";
-import { createRefreshCallback } from "../../src/watch/dashboard.js";
+import { createRefreshCallback, startDashboard } from "../../src/watch/dashboard.js";
 
 const mockReadState = vi.mocked(readDashboardState);
 const mockRenderDashboard = vi.mocked(renderDashboard);
@@ -97,5 +97,29 @@ describe("createRefreshCallback", () => {
     await refresh();
 
     expect(mockRenderDashboard).toHaveBeenCalledWith(state);
+  });
+});
+
+describe("startDashboard", () => {
+  let originalIsTTY: boolean | undefined;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    originalIsTTY = process.stdin.isTTY;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, writable: true });
+    vi.restoreAllMocks();
+  });
+
+  it("can be stopped via signal in non-TTY environment", async () => {
+    Object.defineProperty(process.stdin, "isTTY", { value: false, writable: true });
+    mockReadState.mockResolvedValue(makeEmptyState());
+    mockRenderDashboard.mockReturnValue("output");
+
+    const promise = startDashboard({ projectDir: "/test/project", interval: 2000 });
+    process.emit("SIGTERM");
+    await promise;
   });
 });

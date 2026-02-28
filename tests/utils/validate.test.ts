@@ -533,4 +533,16 @@ describe("parseInterval", () => {
   it("throws for non-numeric value", () => {
     expect(() => parseInterval("abc")).toThrow("500");
   });
+
+  it("throws for partially numeric string like '500abc'", () => {
+    expect(() => parseInterval("500abc")).toThrow();
+  });
+
+  it("throws for string with leading numeric chars like '1000xyz'", () => {
+    expect(() => parseInterval("1000xyz")).toThrow();
+  });
+
+  it("accepts valid integer string '3000'", () => {
+    expect(parseInterval("3000")).toBe(3000);
+  });
 });

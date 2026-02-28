@@ -94,7 +94,7 @@ export function replaceSection(content: string, marker: string, replacement: str
   const headingText = marker.startsWith("## ") ? marker.slice(3) : marker;
   const headingTextEscaped = headingText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const nextHeadingMatch = afterSection.match(new RegExp(`\\n## (?!${headingTextEscaped})`));
-  const after = nextHeadingMatch ? afterSection.slice(nextHeadingMatch.index!) : "";
+  const after = nextHeadingMatch ? afterSection.slice(nextHeadingMatch.index ?? 0) : "";
 
   return before.trimEnd() + replacement + after;
 }

@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { formatStatus } from "../utils/format-status.js";
 import type {
   DashboardState,
   LoopInfo,
@@ -67,21 +68,7 @@ export function formatSessionAge(createdAt: string): string {
   return `${String(minutes)}m ${String(seconds)}s`;
 }
 
-export function formatStatus(status: string): string {
-  switch (status) {
-    case "running":
-      return chalk.yellow(status);
-    case "completed":
-    case "success":
-      return chalk.green(status);
-    case "halted":
-    case "stopped":
-    case "blocked":
-      return chalk.red(status);
-    default:
-      return status;
-  }
-}
+export { formatStatus };
 
 export function formatCBState(state: string): string {
   switch (state) {

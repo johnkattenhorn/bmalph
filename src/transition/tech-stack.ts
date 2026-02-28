@@ -5,7 +5,7 @@ export function detectTechStack(content: string): TechStack | null {
   const stackMatch = content.match(/^##\s+(?:Tech(?:nology)?\s+Stack|Stack)/im);
   if (!stackMatch) return null;
 
-  const startIndex = stackMatch.index!;
+  const startIndex = stackMatch.index ?? 0;
   // Extract section content until next ## heading or end
   const rest = content.slice(startIndex);
   const nextHeading = rest.slice(1).search(/^##\s/m);

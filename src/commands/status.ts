@@ -2,6 +2,8 @@ import chalk from "chalk";
 import { readConfig } from "../utils/config.js";
 import { readState, readRalphStatus, getPhaseLabel, getPhaseInfo } from "../utils/state.js";
 import { withErrorHandling } from "../utils/errors.js";
+import { formatStatus } from "../utils/format-status.js";
+import { ARTIFACT_DEFINITIONS } from "../utils/artifact-definitions.js";
 import { resolveProjectPlatform } from "../platform/resolve.js";
 import { getFullTierPlatformNames } from "../platform/registry.js";
 import { scanProjectArtifacts } from "../transition/artifact-scan.js";
@@ -168,18 +170,6 @@ export async function runStatus(options: StatusOptions): Promise<void> {
   }
 }
 
-const ARTIFACT_DEFINITIONS: { phase: number; name: string; required: boolean }[] = [
-  { phase: 1, name: "Product Brief", required: false },
-  { phase: 1, name: "Market Research", required: false },
-  { phase: 1, name: "Domain Research", required: false },
-  { phase: 1, name: "Technical Research", required: false },
-  { phase: 2, name: "PRD", required: true },
-  { phase: 2, name: "UX Design", required: false },
-  { phase: 3, name: "Architecture", required: true },
-  { phase: 3, name: "Epics & Stories", required: true },
-  { phase: 3, name: "Readiness Report", required: true },
-];
-
 const PHASE_LABELS: Record<number, string> = {
   1: "Phase 1 - Analysis",
   2: "Phase 2 - Planning",
@@ -208,19 +198,6 @@ function printArtifactChecklist(scan: ProjectArtifactScan): void {
       const suffix = def.required ? " (required)" : "";
       console.log(`      ${chalk.dim("-")} ${def.name}${suffix}`);
     }
-  }
-}
-
-function formatStatus(status: string): string {
-  switch (status) {
-    case "planning":
-      return chalk.blue("planning");
-    case "implementing":
-      return chalk.yellow("implementing");
-    case "completed":
-      return chalk.green("completed");
-    default:
-      return status;
   }
 }
 

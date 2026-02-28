@@ -6,6 +6,9 @@ import { isEnoent } from "./errors.js";
  * - File not found → returns null
  * - Parse error → throws
  * - Permission error → throws
+ *
+ * Note: The generic type parameter T is an unchecked cast (`JSON.parse(content) as T`).
+ * Callers are responsible for validating the parsed data matches the expected shape.
  */
 export async function readJsonFile<T>(path: string): Promise<T | null> {
   let content: string;

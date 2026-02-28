@@ -378,19 +378,26 @@ update_status() {
     local last_action=$3
     local status=$4
     local exit_reason=${5:-""}
-    
-    cat > "$STATUS_FILE" << STATUSEOF
-{
-    "timestamp": "$(get_iso_timestamp)",
-    "loop_count": $loop_count,
-    "calls_made_this_hour": $calls_made,
-    "max_calls_per_hour": $MAX_CALLS_PER_HOUR,
-    "last_action": "$last_action",
-    "status": "$status",
-    "exit_reason": "$exit_reason",
-    "next_reset": "$(get_next_hour_time)"
-}
-STATUSEOF
+
+    jq -n \
+        --arg timestamp "$(get_iso_timestamp)" \
+        --argjson loop_count "$loop_count" \
+        --argjson calls_made "$calls_made" \
+        --argjson max_calls "$MAX_CALLS_PER_HOUR" \
+        --arg last_action "$last_action" \
+        --arg status "$status" \
+        --arg exit_reason "$exit_reason" \
+        --arg next_reset "$(get_next_hour_time)" \
+        '{
+            timestamp: $timestamp,
+            loop_count: $loop_count,
+            calls_made_this_hour: $calls_made,
+            max_calls_per_hour: $max_calls,
+            last_action: $last_action,
+            status: $status,
+            exit_reason: $exit_reason,
+            next_reset: $next_reset
+        }' > "$STATUS_FILE"
 }
 
 # Check if we can make another call

@@ -190,7 +190,13 @@ function triggerExit(ralph: MockRalphProcess, code: number | null): void {
 async function resolveViaTick(promise: Promise<unknown>): Promise<void> {
   // Allow any pending microtasks/timers to resolve
   await new Promise((r) => setTimeout(r, 50));
-  // The promise may or may not have resolved depending on stdin handling
-  // For unit tests with mocked stdin, we race with a timeout
-  await Promise.race([promise, new Promise((r) => setTimeout(r, 100))]);
+  // Track whether the promise actually resolves (not just the timeout winning)
+  let resolved = false;
+  await Promise.race([
+    promise.then(() => {
+      resolved = true;
+    }),
+    new Promise((r) => setTimeout(r, 100)),
+  ]);
+  expect(resolved).toBe(true);
 }

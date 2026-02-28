@@ -2,7 +2,7 @@ import chalk from "chalk";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { runTransition } from "../transition/orchestration.js";
-import { withErrorHandling } from "../utils/errors.js";
+import { isEnoent, withErrorHandling } from "../utils/errors.js";
 import { resolveProjectPlatform } from "../platform/resolve.js";
 import { getFullTierPlatformNames } from "../platform/registry.js";
 import type { PreflightIssue } from "../transition/types.js";
@@ -32,7 +32,8 @@ async function runImplement(options: ImplementOptions): Promise<void> {
       process.exitCode = 1;
       return;
     }
-  } catch {
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
     // fix_plan doesn't exist — first run, proceed
   }
 

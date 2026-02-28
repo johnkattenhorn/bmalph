@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { relative } from "node:path";
 import { findArtifactsDir } from "./artifacts.js";
+import { ARTIFACT_DEFINITIONS } from "../utils/artifact-definitions.js";
 
 export interface ArtifactClassification {
   phase: number;
@@ -27,27 +28,8 @@ export interface ProjectArtifactScan {
   nextAction: string;
 }
 
-interface ArtifactRule {
-  pattern: RegExp;
-  phase: number;
-  name: string;
-  required: boolean;
-}
-
-const ARTIFACT_RULES: ArtifactRule[] = [
-  { pattern: /brief/i, phase: 1, name: "Product Brief", required: false },
-  { pattern: /market/i, phase: 1, name: "Market Research", required: false },
-  { pattern: /domain/i, phase: 1, name: "Domain Research", required: false },
-  { pattern: /tech.*research/i, phase: 1, name: "Technical Research", required: false },
-  { pattern: /prd/i, phase: 2, name: "PRD", required: true },
-  { pattern: /ux/i, phase: 2, name: "UX Design", required: false },
-  { pattern: /architect/i, phase: 3, name: "Architecture", required: true },
-  { pattern: /epic|stor/i, phase: 3, name: "Epics & Stories", required: true },
-  { pattern: /readiness/i, phase: 3, name: "Readiness Report", required: true },
-];
-
 export function classifyArtifact(filename: string): ArtifactClassification | null {
-  for (const rule of ARTIFACT_RULES) {
+  for (const rule of ARTIFACT_DEFINITIONS) {
     if (rule.pattern.test(filename)) {
       return { phase: rule.phase, name: rule.name, required: rule.required };
     }
@@ -82,7 +64,7 @@ export function getMissing(phases: PhaseArtifacts): string[] {
   const missing: string[] = [];
   const foundNames = new Set([...phases[1], ...phases[2], ...phases[3]].map((a) => a.name));
 
-  for (const rule of ARTIFACT_RULES) {
+  for (const rule of ARTIFACT_DEFINITIONS) {
     if (rule.required && !foundNames.has(rule.name)) {
       missing.push(rule.name);
     }

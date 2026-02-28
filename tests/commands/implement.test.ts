@@ -346,6 +346,19 @@ describe("implement command", () => {
     });
   });
 
+  describe("re-run detection error discrimination", () => {
+    it("re-throws non-ENOENT errors from access check", async () => {
+      mockAccess.mockRejectedValue(Object.assign(new Error("EACCES"), { code: "EACCES" }));
+
+      const { implementCommand } = await import("../../src/commands/implement.js");
+      await implementCommand({ projectDir: "/test/project" });
+
+      expect(process.exitCode).toBe(1);
+      const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(errorOutput).toContain("EACCES");
+    });
+  });
+
   describe("error handling", () => {
     it("sets exitCode 1 when runTransition throws", async () => {
       const { runTransition } = await import("../../src/transition/orchestration.js");

@@ -95,7 +95,10 @@ Use `bmalph implement` (or `/bmalph-implement`) to transition from BMAD planning
 - `src/transition/types.ts` — Shared transition types
 - `src/commands/init.ts` — CLI init handler
 - `src/commands/upgrade.ts` — CLI upgrade handler
-- `src/commands/doctor.ts` — CLI doctor handler
+- `src/commands/doctor.ts` — CLI doctor command handler + check registry
+- `src/commands/doctor-checks.ts` — Core/environment doctor checks
+- `src/commands/doctor-health-checks.ts` — Project health doctor checks
+- `src/commands/doctor-runtime-checks.ts` — Ralph runtime state doctor checks
 - `src/commands/check-updates.ts` — Check for upstream updates
 - `src/commands/status.ts` — Show project installation status
 - `src/commands/implement.ts` — CLI implement handler
@@ -121,6 +124,8 @@ Use `bmalph implement` (or `/bmalph-implement`) to transition from BMAD planning
 - `src/utils/file-system.ts` — Atomic file writes, exists helper
 - `src/utils/github.ts` — GitHub API client
 - `src/utils/logger.ts` — Debug logging (--verbose)
+- `src/utils/format-status.ts` — Shared status formatting (Ralph + bmalph phases)
+- `src/utils/artifact-definitions.ts` — Shared BMAD artifact definitions
 - `src/platform/types.ts` — Platform type definitions (PlatformId, PlatformTier, CommandDelivery)
 - `src/platform/registry.ts` — Platform registry (getPlatform, getAllPlatforms)
 - `src/platform/detect.ts` — Auto-detect platform from project markers

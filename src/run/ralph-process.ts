@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { RALPH_DIR } from "../utils/constants.js";
+import { isEnoent } from "../utils/errors.js";
 import type { RalphProcess, RalphProcessState } from "./types.js";
 
 const RALPH_LOOP_PATH = `${RALPH_DIR}/ralph_loop.sh`;
@@ -18,8 +19,13 @@ export async function validateRalphLoop(projectDir: string): Promise<void> {
   const loopPath = join(projectDir, RALPH_LOOP_PATH);
   try {
     await access(loopPath);
-  } catch {
-    throw new Error(`${RALPH_LOOP_PATH} not found. Run: bmalph init`);
+  } catch (err) {
+    if (isEnoent(err)) {
+      throw new Error(`${RALPH_LOOP_PATH} not found. Run: bmalph init`, {
+        cause: err,
+      });
+    }
+    throw err;
   }
 }
 
@@ -70,7 +76,11 @@ export function spawnRalphLoop(
         try {
           process.kill(-child.pid, "SIGTERM");
         } catch {
-          child.kill("SIGTERM");
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            // Child already dead — ignore
+          }
         }
       } else {
         child.kill("SIGTERM");

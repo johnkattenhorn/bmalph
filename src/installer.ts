@@ -21,7 +21,10 @@ export function getPackageVersion(): string {
   try {
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
     return pkg.version ?? "unknown";
-  } catch {
+  } catch (err) {
+    if (!isEnoent(err)) {
+      debug(`Failed to read package.json: ${formatError(err)}`);
+    }
     return "unknown";
   }
 }

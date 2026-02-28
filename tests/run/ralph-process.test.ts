@@ -92,6 +92,13 @@ describe("validateRalphLoop", () => {
     const { validateRalphLoop } = await import("../../src/run/ralph-process.js");
     await expect(validateRalphLoop("/project")).rejects.toThrow("ralph_loop.sh");
   });
+
+  it("re-throws non-ENOENT errors instead of masking them", async () => {
+    mockAccess.mockRejectedValue(Object.assign(new Error("EACCES"), { code: "EACCES" }));
+
+    const { validateRalphLoop } = await import("../../src/run/ralph-process.js");
+    await expect(validateRalphLoop("/project")).rejects.toThrow("EACCES");
+  });
 });
 
 describe("spawnRalphLoop", () => {
@@ -176,6 +183,36 @@ describe("spawnRalphLoop", () => {
     rp.kill();
 
     expect(mockChild.kill).toHaveBeenCalled();
+  });
+
+  it("does not throw when fallback child.kill also fails (process already dead)", async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+
+    try {
+      const mockChild = createMockChild();
+      mockSpawn.mockReturnValue(mockChild);
+
+      // Mock process.kill to throw ESRCH (process group kill fails)
+      const processKillSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+        throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+      });
+
+      // Mock child.kill to also throw (child already dead)
+      vi.mocked(mockChild.kill).mockImplementation(() => {
+        throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+      });
+
+      const { spawnRalphLoop } = await import("../../src/run/ralph-process.js");
+      const rp = spawnRalphLoop("/project", "claude-code", { inheritStdio: false });
+
+      // Should not throw
+      expect(() => rp.kill()).not.toThrow();
+
+      processKillSpy.mockRestore();
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+    }
   });
 
   it("detach unrefs the child and updates state", async () => {

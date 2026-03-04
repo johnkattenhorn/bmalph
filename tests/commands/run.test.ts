@@ -436,5 +436,117 @@ describe("runCommand", () => {
         inheritStdio: true,
       });
     });
+
+    it("propagates Ralph non-zero exit code in headless mode", async () => {
+      const { readConfig } = await import("../../src/utils/config.js");
+      const { getPlatform } = await import("../../src/platform/registry.js");
+      const { validateBashAvailable, validateRalphLoop, spawnRalphLoop } =
+        await import("../../src/run/ralph-process.js");
+
+      vi.mocked(readConfig).mockResolvedValue({
+        name: "test",
+        description: "",
+        createdAt: "2026-02-28",
+        platform: "claude-code",
+      });
+      vi.mocked(getPlatform).mockReturnValue(mockPlatform());
+      vi.mocked(validateBashAvailable).mockResolvedValue(undefined);
+      vi.mocked(validateRalphLoop).mockResolvedValue(undefined);
+
+      const onExitCb: Array<(code: number | null) => void> = [];
+      vi.mocked(spawnRalphLoop).mockReturnValue({
+        child: { pid: 123 },
+        state: "running",
+        exitCode: null,
+        kill: vi.fn(),
+        detach: vi.fn(),
+        onExit: vi.fn((cb) => onExitCb.push(cb)),
+      } as never);
+
+      const { runCommand } = await import("../../src/commands/run.js");
+      const promise = runCommand({
+        projectDir: "/test/project",
+        interval: "2000",
+        dashboard: false,
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+      for (const cb of onExitCb) cb(7);
+      await promise;
+
+      expect(process.exitCode).toBe(7);
+    });
+
+    it("propagates Ralph non-zero exit code after dashboard mode stops", async () => {
+      const { readConfig } = await import("../../src/utils/config.js");
+      const { getPlatform } = await import("../../src/platform/registry.js");
+      const { validateBashAvailable, validateRalphLoop, spawnRalphLoop } =
+        await import("../../src/run/ralph-process.js");
+      const { startRunDashboard } = await import("../../src/run/run-dashboard.js");
+
+      vi.mocked(readConfig).mockResolvedValue({
+        name: "test",
+        description: "",
+        createdAt: "2026-02-28",
+        platform: "claude-code",
+      });
+      vi.mocked(getPlatform).mockReturnValue(mockPlatform());
+      vi.mocked(validateBashAvailable).mockResolvedValue(undefined);
+      vi.mocked(validateRalphLoop).mockResolvedValue(undefined);
+
+      vi.mocked(spawnRalphLoop).mockReturnValue({
+        child: { pid: 123 },
+        state: "running",
+        exitCode: null,
+        kill: vi.fn(),
+        detach: vi.fn(),
+        onExit: vi.fn(),
+      } as never);
+      vi.mocked(startRunDashboard).mockImplementation(async ({ ralph }) => {
+        ralph.state = "stopped";
+        ralph.exitCode = 9;
+      });
+
+      const { runCommand } = await import("../../src/commands/run.js");
+      await runCommand({ projectDir: "/test/project", interval: "2000", dashboard: true });
+
+      expect(process.exitCode).toBe(9);
+    });
+
+    it("does not set exit code when dashboard session detaches", async () => {
+      const { readConfig } = await import("../../src/utils/config.js");
+      const { getPlatform } = await import("../../src/platform/registry.js");
+      const { validateBashAvailable, validateRalphLoop, spawnRalphLoop } =
+        await import("../../src/run/ralph-process.js");
+      const { startRunDashboard } = await import("../../src/run/run-dashboard.js");
+
+      vi.mocked(readConfig).mockResolvedValue({
+        name: "test",
+        description: "",
+        createdAt: "2026-02-28",
+        platform: "claude-code",
+      });
+      vi.mocked(getPlatform).mockReturnValue(mockPlatform());
+      vi.mocked(validateBashAvailable).mockResolvedValue(undefined);
+      vi.mocked(validateRalphLoop).mockResolvedValue(undefined);
+
+      vi.mocked(spawnRalphLoop).mockReturnValue({
+        child: { pid: 123 },
+        state: "running",
+        exitCode: null,
+        kill: vi.fn(),
+        detach: vi.fn(),
+        onExit: vi.fn(),
+      } as never);
+      vi.mocked(startRunDashboard).mockImplementation(async ({ ralph }) => {
+        ralph.state = "detached";
+        ralph.exitCode = 9;
+      });
+
+      const { runCommand } = await import("../../src/commands/run.js");
+      await runCommand({ projectDir: "/test/project", interval: "2000", dashboard: true });
+
+      expect(process.exitCode).toBeUndefined();
+    });
   });
 });

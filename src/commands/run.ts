@@ -48,10 +48,20 @@ async function executeRun(options: RunCommandOptions): Promise<void> {
 
   if (dashboard) {
     await startRunDashboard({ projectDir, interval, ralph });
+    if (ralph.state === "stopped") {
+      applyRalphExitCode(ralph.exitCode);
+    }
   } else {
-    await new Promise<void>((resolve) => {
-      ralph.onExit(() => resolve());
+    const exitCode = await new Promise<number | null>((resolve) => {
+      ralph.onExit((code) => resolve(code));
     });
+    applyRalphExitCode(exitCode);
+  }
+}
+
+function applyRalphExitCode(code: number | null): void {
+  if (typeof code === "number" && code !== 0) {
+    process.exitCode = code;
   }
 }
 

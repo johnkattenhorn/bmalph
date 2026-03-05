@@ -1,8 +1,8 @@
 import type { Story } from "./types.js";
 
 // Cached regex patterns for performance (compiled once at module load)
-const GIVEN_LINE_PATTERN = /^\*?\*?Given\*?\*?\s/;
-const GWT_LINE_PATTERN = /^\*?\*?(Given|When|Then)\*?\*?\s/;
+const GIVEN_LINE_PATTERN = /^(?:[-*]\s+)?(?:\*\*)?Given(?:\*\*)?\s/i;
+const AC_KEYWORD_LINE_PATTERN = /^(?:[-*]\s+)?(?:\*\*)?(Given|When|Then|And)(?:\*\*)?\s/i;
 const BOLD_PATTERN = /\*\*/g;
 const EPIC_HEADER_PATTERN = /^##\s+Epic\s+\d+:\s+(.+)/;
 const HEADING_PATTERN = /^#{2,3}\s/;
@@ -19,12 +19,25 @@ function isGivenLine(line: string): boolean {
   return GIVEN_LINE_PATTERN.test(line.trim());
 }
 
-function isGwtLine(line: string): boolean {
-  return GWT_LINE_PATTERN.test(line.trim());
+function isAcKeywordLine(line: string): boolean {
+  return AC_KEYWORD_LINE_PATTERN.test(line.trim());
 }
 
 function stripBold(text: string): string {
   return text.replace(BOLD_PATTERN, "");
+}
+
+function normalizeAcLine(line: string): string {
+  return stripBold(line)
+    .replace(/^[-*]\s+/, "")
+    .trim();
+}
+
+function isAcContinuationLine(line: string): boolean {
+  const trimmed = line.trim();
+  return (
+    /^\s{2,}\S/.test(line) && !HEADING_PATTERN.test(trimmed) && !AC_HEADING_PATTERN.test(trimmed)
+  );
 }
 
 function parseAcBlocks(lines: string[]): string[] {
@@ -38,16 +51,18 @@ function parseAcBlocks(lines: string[]): string[] {
     if (isGivenLine(trimmed)) {
       // Start new criterion block
       if (current.length > 0) {
-        criteria.push(current.map(stripBold).join(", "));
+        criteria.push(current.join(", "));
       }
-      current = [trimmed];
-    } else if (isGwtLine(trimmed)) {
-      current.push(trimmed);
+      current = [normalizeAcLine(trimmed)];
+    } else if (current.length > 0 && isAcKeywordLine(trimmed)) {
+      current.push(normalizeAcLine(trimmed));
+    } else if (current.length > 0 && isAcContinuationLine(line)) {
+      current.push(normalizeAcLine(trimmed));
     }
   }
 
   if (current.length > 0) {
-    criteria.push(current.map(stripBold).join(", "));
+    criteria.push(current.join(", "));
   }
 
   return criteria;

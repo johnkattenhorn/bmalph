@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.config.e2e.ts",
     "test:coverage": "vitest run --coverage",
-    "test:bash": "bash -c 'command -v bats &>/dev/null && bats tests/bash/*.bats tests/bash/drivers/*.bats || echo \"[skip] bats not installed\"'",
+    "test:bash": "node scripts/run-bash-tests.mjs",
     "test:all": "npm run test && npm run test:e2e && npm run test:bash",
     "check": "npm run lint && npm run build && npm test",
     "dev": "tsc --watch",

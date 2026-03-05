@@ -1,4 +1,5 @@
 import type { ProjectContext, TruncationInfo } from "./types.js";
+import { PRD_SCOPE_SECTION_PATTERNS } from "./section-patterns.js";
 import { SECTION_EXTRACT_MAX_LENGTH } from "../utils/constants.js";
 
 export interface ExtractProjectContextResult {
@@ -57,15 +58,41 @@ interface ExtractFromPatternsResult {
   originalLength: number;
 }
 
-function extractFromPatternsWithInfo(
+export function extractFirstMatchingSection(
   content: string,
-  patterns: RegExp[]
+  patterns: readonly RegExp[],
+  maxLength = SECTION_EXTRACT_MAX_LENGTH
+): string {
+  return extractFirstMatchingSectionWithInfo(content, patterns, maxLength).content;
+}
+
+export function extractFirstMatchingSectionWithInfo(
+  content: string,
+  patterns: readonly RegExp[],
+  maxLength = SECTION_EXTRACT_MAX_LENGTH
 ): ExtractFromPatternsResult {
   for (const pattern of patterns) {
-    const result = extractSectionWithInfo(content, pattern);
+    const result = extractSectionWithInfo(content, pattern, maxLength);
     if (result.content) return result;
   }
   return { content: "", wasTruncated: false, originalLength: 0 };
+}
+
+export function extractMatchingSections(
+  content: string,
+  patterns: readonly RegExp[],
+  maxLength = SECTION_EXTRACT_MAX_LENGTH
+): string[] {
+  const sections: string[] = [];
+
+  for (const pattern of patterns) {
+    const result = extractSectionWithInfo(content, pattern, maxLength);
+    if (result.content) {
+      sections.push(result.content);
+    }
+  }
+
+  return sections;
 }
 
 export function extractProjectContext(artifacts: Map<string, string>): ExtractProjectContextResult {
@@ -120,7 +147,7 @@ export function extractProjectContext(artifacts: Map<string, string>): ExtractPr
     {
       field: "scopeBoundaries",
       source: prdContent || allContent,
-      patterns: [/^##\s+Scope/m, /^##\s+In Scope/m, /^##\s+Out of Scope/m, /^##\s+Boundaries/m],
+      patterns: [...PRD_SCOPE_SECTION_PATTERNS, /^##\s+Boundaries/m],
     },
     {
       field: "targetUsers",
@@ -174,7 +201,7 @@ export function extractProjectContext(artifacts: Map<string, string>): ExtractPr
   };
 
   for (const { field, source, patterns } of fields) {
-    const result = extractFromPatternsWithInfo(source, patterns);
+    const result = extractFirstMatchingSectionWithInfo(source, patterns);
     context[field as keyof ProjectContext] = result.content;
     if (result.wasTruncated) {
       truncated.push({

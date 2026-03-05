@@ -1,0 +1,184 @@
+#!/usr/bin/env node
+
+import { spawn } from "node:child_process";
+import { readFile, readdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+const BASH_TEST_DIRECTORIES = ["tests/bash", "tests/bash/drivers"];
+const BASH_NORMALIZATION_ROOTS = ["tests/bash", "ralph", "scripts"];
+const BASH_TEXT_FILE_PATTERN = /\.(?:bash|bats|sh)$/;
+const USE_WINDOWS_SHELL = process.platform === "win32";
+
+function isNodeErrorWithCode(value) {
+  return Boolean(value && typeof value === "object" && "code" in value);
+}
+
+function quoteForBash(value) {
+  return "'" + value.replaceAll("'", "'\\''") + "'";
+}
+
+function quoteForWindowsShell(value) {
+  if (!/[ \t"&|<>^]/.test(value)) {
+    return value;
+  }
+
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+function spawnBash(args, options) {
+  if (!USE_WINDOWS_SHELL) {
+    return spawn("bash", args, options);
+  }
+
+  const commandLine = ["bash", ...args.map((arg) => quoteForWindowsShell(arg))].join(" ");
+  return spawn(commandLine, { ...options, shell: true });
+}
+
+function spawnInBash(command, options) {
+  return spawnBash(["-lc", command], options);
+}
+
+function isBashAvailable() {
+  return new Promise((resolve) => {
+    const child = spawnBash(["--version"], { stdio: "ignore" });
+
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
+  });
+}
+
+function isToolAvailableInBash(command) {
+  return new Promise((resolve) => {
+    const child = spawnInBash(`command -v ${command} >/dev/null 2>&1`, { stdio: "ignore" });
+
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
+  });
+}
+
+async function listBatsFiles(projectDir) {
+  const batsFiles = [];
+
+  for (const relativeDir of BASH_TEST_DIRECTORIES) {
+    const absoluteDir = join(projectDir, relativeDir);
+    let entries;
+
+    try {
+      entries = await readdir(absoluteDir, { withFileTypes: true });
+    } catch (error) {
+      if (isNodeErrorWithCode(error) && error.code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+
+    const filesInDirectory = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".bats"))
+      .map((entry) => `${relativeDir}/${entry.name}`)
+      .sort();
+
+    batsFiles.push(...filesInDirectory);
+  }
+
+  return batsFiles;
+}
+
+async function normalizeBashLineEndings(dir) {
+  let entries;
+
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeErrorWithCode(error) && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+
+  for (const entry of entries) {
+    const absolutePath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await normalizeBashLineEndings(absolutePath);
+      continue;
+    }
+
+    if (!BASH_TEXT_FILE_PATTERN.test(entry.name)) {
+      continue;
+    }
+
+    const content = await readFile(absolutePath, "utf8");
+    const normalized = content.replace(/\r\n/g, "\n");
+    if (normalized !== content) {
+      originalContents.set(absolutePath, content);
+      await writeFile(absolutePath, normalized, "utf8");
+    }
+  }
+}
+
+const originalContents = new Map();
+
+async function restoreOriginalLineEndings() {
+  for (const [filePath, content] of originalContents) {
+    await writeFile(filePath, content, "utf8");
+  }
+  originalContents.clear();
+}
+
+function runBats(files) {
+  return new Promise((resolve, reject) => {
+    const child = spawnInBash(`bats ${files.map((file) => quoteForBash(file)).join(" ")}`, {
+      stdio: "inherit",
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      resolve(code ?? 1);
+    });
+  });
+}
+
+async function main() {
+  try {
+    if (!(await isBashAvailable())) {
+      process.stdout.write("[skip] bash not installed\n");
+      return 0;
+    }
+
+    if (USE_WINDOWS_SHELL) {
+      for (const root of BASH_NORMALIZATION_ROOTS) {
+        await normalizeBashLineEndings(join(process.cwd(), root));
+      }
+    }
+
+    if (!(await isToolAvailableInBash("bats"))) {
+      process.stdout.write("[skip] bats not installed\n");
+      return 0;
+    }
+
+    if (!(await isToolAvailableInBash("jq"))) {
+      process.stdout.write("[skip] jq not installed\n");
+      return 0;
+    }
+
+    const batsFiles = await listBatsFiles(process.cwd());
+    if (batsFiles.length === 0) {
+      process.stdout.write("[skip] no bash test files found\n");
+      return 0;
+    }
+
+    return runBats(batsFiles);
+  } finally {
+    await restoreOriginalLineEndings();
+  }
+}
+
+try {
+  process.exitCode = await main();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`Failed to run bash tests: ${message}\n`);
+  process.exitCode = 1;
+}

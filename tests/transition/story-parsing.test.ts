@@ -106,6 +106,57 @@ Description.
       expect(stories).toHaveLength(1);
       expect(stories[0].acceptanceCriteria).toHaveLength(2);
     });
+
+    it("parses BMAD-style bullet acceptance criteria with And lines", () => {
+      const content = `## Epic 1: Test
+
+### Story 1.1: Bullet AC
+
+Description.
+
+**Acceptance Criteria:**
+
+- **Given** a valid workspace exists
+- **When** the user signs in
+- **Then** the dashboard loads
+- **And** the active workspace is shown
+
+* Given audit logging is enabled
+* When the user exports the report
+* Then the export is recorded
+`;
+      const stories = parseStories(content);
+
+      expect(stories).toHaveLength(1);
+      expect(stories[0].acceptanceCriteria).toEqual([
+        "Given a valid workspace exists, When the user signs in, Then the dashboard loads, And the active workspace is shown",
+        "Given audit logging is enabled, When the user exports the report, Then the export is recorded",
+      ]);
+    });
+
+    it("does not treat story notes as acceptance criteria content", () => {
+      const content = `## Epic 1: Reporting
+
+### Story 1.1: Export audit trail
+
+As an analyst, I want to export the audit trail.
+
+**Acceptance Criteria:**
+
+- Given reporting is enabled
+- When I export the audit trail
+- Then the CSV download starts
+
+Notes:
+- Use a background job for exports larger than 10 MB
+`;
+      const stories = parseStories(content);
+
+      expect(stories).toHaveLength(1);
+      expect(stories[0].acceptanceCriteria).toEqual([
+        "Given reporting is enabled, When I export the audit trail, Then the CSV download starts",
+      ]);
+    });
   });
 
   describe("parseStoriesWithWarnings", () => {
@@ -193,6 +244,26 @@ As a developer, I want to ingest events.
       const result = parseStoriesWithWarnings(content);
 
       expect(result.stories[0].epicDescription).toContain("data ingestion pipeline");
+    });
+
+    it("does not warn about missing acceptance criteria for BMAD-style bullet lists", () => {
+      const content = `## Epic 1: Reporting
+
+### Story 1.1: Export audit trail
+
+As an analyst, I want to export the audit trail.
+
+**Acceptance Criteria:**
+
+- Given reporting is enabled
+- When I export the audit trail
+- Then the CSV download starts
+- And the action is logged
+`;
+      const result = parseStoriesWithWarnings(content);
+
+      expect(result.stories).toHaveLength(1);
+      expect(result.warnings).not.toContainEqual(expect.stringContaining("no acceptance criteria"));
     });
   });
 });

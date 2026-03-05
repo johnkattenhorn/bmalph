@@ -1,8 +1,25 @@
 import type { Story, PreflightIssue, PreflightResult } from "./types.js";
-import { extractSection } from "./context.js";
+import { extractFirstMatchingSection } from "./context.js";
+import { PRD_SCOPE_SECTION_PATTERNS } from "./section-patterns.js";
+import { extractTechStackSource } from "./tech-stack.js";
 
-function hasSection(content: string, patterns: RegExp[]): boolean {
-  return patterns.some((p) => extractSection(content, p) !== "");
+function hasSection(content: string, patterns: readonly RegExp[]): boolean {
+  return extractFirstMatchingSection(content, patterns) !== "";
+}
+
+export class PreflightValidationError extends Error {
+  readonly issues: PreflightIssue[];
+
+  constructor(issues: PreflightIssue[]) {
+    super(
+      `Pre-flight validation failed: ${issues
+        .filter((issue) => issue.severity === "error")
+        .map((issue) => issue.message)
+        .join("; ")}. Use --force to override.`
+    );
+    this.name = "PreflightValidationError";
+    this.issues = issues;
+  }
 }
 
 export function validatePrd(content: string | null): PreflightIssue[] {
@@ -53,7 +70,7 @@ export function validatePrd(content: string | null): PreflightIssue[] {
     });
   }
 
-  if (!hasSection(content, [/^##\s+Scope/m, /^##\s+In Scope/m, /^##\s+Out of Scope/m])) {
+  if (!hasSection(content, PRD_SCOPE_SECTION_PATTERNS)) {
     issues.push({
       id: "W6",
       severity: "warning",
@@ -79,7 +96,7 @@ export function validateArchitecture(content: string | null): PreflightIssue[] {
 
   const issues: PreflightIssue[] = [];
 
-  if (!hasSection(content, [/^##\s+Tech Stack/m, /^##\s+Technology Stack/m])) {
+  if (extractTechStackSource(content) === "") {
     issues.push({
       id: "W7",
       severity: "warning",

@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile, readFile, access } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runTransition } from "../../src/transition/orchestration.js";
+import { PreflightValidationError } from "../../src/transition/preflight.js";
 import { readState } from "../../src/utils/state.js";
 
 describe("orchestration", () => {
@@ -410,6 +411,50 @@ describe("orchestration", () => {
       // Should succeed without crashing
       expect(result.storiesCount).toBe(1);
     });
+
+    it("customizes @AGENT.md when stack is documented in Core Architectural Decisions", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n\n**Acceptance Criteria:**\n\n- Given something\n- When action happens\n- Then result happens\n`
+      );
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/architecture.md"),
+        `# Architecture\n\n## Core Architectural Decisions\n\n- Use Node.js 20 with TypeScript\n- Use Vitest for automated tests\n\n## Other\n`
+      );
+      await writeFile(
+        join(testDir, ".ralph/@AGENT.md"),
+        [
+          "# Agent",
+          "",
+          "## Project Setup",
+          "```bash",
+          "echo setup",
+          "```",
+          "",
+          "## Running Tests",
+          "```bash",
+          "echo test",
+          "```",
+          "",
+          "## Build Commands",
+          "```bash",
+          "echo build",
+          "```",
+          "",
+          "## Development Server",
+          "```bash",
+          "echo dev",
+          "```",
+        ].join("\n")
+      );
+
+      await runTransition(testDir);
+
+      const agent = await readFile(join(testDir, ".ralph/@AGENT.md"), "utf-8");
+      expect(agent).toContain("npm install");
+      expect(agent).toContain("npx vitest run");
+    });
   });
 
   describe("atomic specs copy", () => {
@@ -490,6 +535,23 @@ describe("orchestration", () => {
       );
 
       await expect(runTransition(testDir)).rejects.toThrow(/pre-flight validation failed/i);
+    });
+
+    it("exposes structured preflight issues on blocking failure", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/stories.md"),
+        `## Epic 1: Core\n\n### Story 1.1: Feature\n\nDo something.\n`
+      );
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/readiness.md"),
+        `# Readiness Report\n\n**NO-GO** - Missing test coverage.\n`
+      );
+
+      const error = await runTransition(testDir).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(PreflightValidationError);
+      expect((error as PreflightValidationError).issues.map((issue) => issue.id)).toContain("E1");
     });
 
     it("proceeds with warnings for missing PRD sections", async () => {
@@ -573,6 +635,116 @@ describe("orchestration", () => {
       // "has no acceptance criteria" should appear only once
       const acWarnings = result.warnings.filter((w) => /has no acceptance criteria/i.test(w));
       expect(acWarnings).toHaveLength(1);
+    });
+
+    it("accepts BMAD-native scope, architecture, and acceptance criteria formats", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/prd.md"),
+        `# PRD
+
+## Executive Summary
+
+Summary.
+
+## Functional Requirements
+
+- Support workspace sign-in
+
+## Non-Functional Requirements
+
+- Keep audit trails
+
+## Product Scope
+
+- In scope: workspace onboarding
+- Out of scope: billing
+`
+      );
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/architecture.md"),
+        `# Architecture
+
+## Starter Template Evaluation
+
+- Use a Next.js starter with TypeScript and Vitest
+`
+      );
+      await writeFile(
+        join(testDir, "_bmad-output/planning-artifacts/epics-and-stories.md"),
+        `## Epic 1: Core
+
+### Story 1.1: Sign in
+
+As a user, I want to sign in.
+
+**Acceptance Criteria:**
+
+- **Given** the workspace exists
+- **When** I submit valid credentials
+- **Then** I reach the dashboard
+- **And** my workspace name is visible
+
+### Story 1.2: Sign out
+
+As a user, I want to sign out.
+
+**Acceptance Criteria:**
+
+* Given I am signed in
+* When I click sign out
+* Then my session ends
+
+### Story 1.3: View audit trail
+
+As an admin, I want to view audit history.
+
+**Acceptance Criteria:**
+
+- Given audit events exist
+- When I open the audit trail
+- Then I see the newest events first
+`
+      );
+      await writeFile(
+        join(testDir, ".ralph/@AGENT.md"),
+        [
+          "# Agent",
+          "",
+          "## Project Setup",
+          "```bash",
+          "echo setup",
+          "```",
+          "",
+          "## Running Tests",
+          "```bash",
+          "echo test",
+          "```",
+          "",
+          "## Build Commands",
+          "```bash",
+          "echo build",
+          "```",
+          "",
+          "## Development Server",
+          "```bash",
+          "echo dev",
+          "```",
+        ].join("\n")
+      );
+
+      const result = await runTransition(testDir);
+      const fixPlan = await readFile(join(testDir, ".ralph/@fix_plan.md"), "utf-8");
+      const agent = await readFile(join(testDir, ".ralph/@AGENT.md"), "utf-8");
+
+      expect(result.preflightIssues.map((issue) => issue.id)).not.toContain("W6");
+      expect(result.preflightIssues.map((issue) => issue.id)).not.toContain("W7");
+      expect(result.preflightIssues.map((issue) => issue.id)).not.toContain("W8");
+      expect(fixPlan).toContain(
+        "> AC: Given the workspace exists, When I submit valid credentials, Then I reach the dashboard, And my workspace name is visible"
+      );
+      expect(agent).toContain("npm install");
+      expect(agent).toContain("npx vitest run");
     });
   });
 });

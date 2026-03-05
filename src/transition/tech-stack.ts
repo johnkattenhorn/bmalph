@@ -1,15 +1,25 @@
 import type { TechStack } from "./types.js";
+import { extractFirstMatchingSection } from "./context.js";
+
+const TECH_STACK_SOURCE_SECTION_PATTERNS = [
+  /^##\s+Tech Stack/m,
+  /^##\s+Technology Stack/m,
+  /^##\s+Stack/m,
+  /^##\s+Core Architectural Decisions/m,
+  /^##\s+Starter Template Evaluation/m,
+] as const;
+
+export function extractTechStackSource(content: string): string {
+  return extractFirstMatchingSection(
+    content,
+    TECH_STACK_SOURCE_SECTION_PATTERNS,
+    Number.POSITIVE_INFINITY
+  ).trim();
+}
 
 export function detectTechStack(content: string): TechStack | null {
-  // Find tech stack section
-  const stackMatch = content.match(/^##\s+(?:Tech(?:nology)?\s+Stack|Stack)/im);
-  if (!stackMatch) return null;
-
-  const startIndex = stackMatch.index ?? 0;
-  // Extract section content until next ## heading or end
-  const rest = content.slice(startIndex);
-  const nextHeading = rest.slice(1).search(/^##\s/m);
-  const sectionContent = nextHeading > -1 ? rest.slice(0, nextHeading + 1) : rest;
+  const sectionContent = extractTechStackSource(content);
+  if (!sectionContent) return null;
 
   // Detect language/runtime
   const isNode =
@@ -71,6 +81,7 @@ export function detectTechStack(content: string): TechStack | null {
 }
 
 export function customizeAgentMd(template: string, stack: TechStack): string {
+  const newline = template.includes("\r\n") ? "\r\n" : "\n";
   const sections: { heading: string; command: string }[] = [
     { heading: "Project Setup", command: stack.setup },
     { heading: "Running Tests", command: stack.test },
@@ -82,10 +93,10 @@ export function customizeAgentMd(template: string, stack: TechStack): string {
   for (const { heading, command } of sections) {
     // Replace code block content after the section heading
     const pattern = new RegExp(
-      `(## ${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\n)\`\`\`bash\\n[\\s\\S]*?\`\`\``,
+      `(## ${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\r?\\n)\`\`\`bash\\r?\\n[\\s\\S]*?\`\`\``,
       "m"
     );
-    result = result.replace(pattern, `$1\`\`\`bash\n${command}\n\`\`\``);
+    result = result.replace(pattern, `$1\`\`\`bash${newline}${command}${newline}\`\`\``);
   }
 
   return result;

@@ -22,6 +22,7 @@ function mockTransitionResult(overrides?: Partial<TransitionResult>): Transition
     storiesCount: 3,
     warnings: [],
     fixPlanPreserved: false,
+    preflightIssues: [],
     generatedFiles: [],
     ...overrides,
   };
@@ -200,6 +201,55 @@ describe("implement command", () => {
       const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).not.toContain("warning(s)");
     });
+
+    it("does not print a warning twice when it is already rendered as a preflight issue", async () => {
+      const { runTransition } = await import("../../src/transition/orchestration.js");
+      const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");
+      vi.mocked(resolveProjectPlatform).mockResolvedValue(mockPlatform());
+      vi.mocked(runTransition).mockResolvedValue(
+        mockTransitionResult({
+          preflightIssues: [
+            {
+              id: "W3",
+              severity: "warning",
+              message: "PRD missing Executive Summary or Vision section",
+            },
+          ],
+          warnings: ["PRD missing Executive Summary or Vision section"],
+        })
+      );
+
+      const { implementCommand } = await import("../../src/commands/implement.js");
+      await implementCommand({ projectDir: "/test/project" });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      const occurrences = output.match(/PRD missing Executive Summary or Vision section/g) ?? [];
+      expect(occurrences).toHaveLength(1);
+    });
+
+    it("keeps preflight warnings in the warning summary after deduping output", async () => {
+      const { runTransition } = await import("../../src/transition/orchestration.js");
+      const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");
+      vi.mocked(resolveProjectPlatform).mockResolvedValue(mockPlatform());
+      vi.mocked(runTransition).mockResolvedValue(
+        mockTransitionResult({
+          preflightIssues: [
+            {
+              id: "W3",
+              severity: "warning",
+              message: "PRD missing Executive Summary or Vision section",
+            },
+          ],
+          warnings: ["PRD missing Executive Summary or Vision section"],
+        })
+      );
+
+      const { implementCommand } = await import("../../src/commands/implement.js");
+      await implementCommand({ projectDir: "/test/project" });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("1 warning(s)");
+    });
   });
 
   describe("fix plan preserved", () => {
@@ -360,6 +410,32 @@ describe("implement command", () => {
   });
 
   describe("error handling", () => {
+    it("prints structured preflight issues when transition fails on blocking readiness", async () => {
+      const { runTransition } = await import("../../src/transition/orchestration.js");
+      const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");
+      const { PreflightValidationError } = await import("../../src/transition/preflight.js");
+      vi.mocked(resolveProjectPlatform).mockResolvedValue(mockPlatform());
+      vi.mocked(runTransition).mockRejectedValue(
+        new PreflightValidationError([
+          {
+            id: "E1",
+            severity: "error",
+            message: "Readiness report indicates NO-GO status",
+            suggestion: "Address issues in the readiness report, or use --force to override.",
+          },
+        ])
+      );
+
+      const { implementCommand } = await import("../../src/commands/implement.js");
+      await implementCommand({ projectDir: "/test/project" });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Readiness report indicates NO-GO status");
+      expect(output).toContain("Address issues in the readiness report");
+      expect(errorOutput).toContain("Pre-flight validation failed");
+    });
+
     it("sets exitCode 1 when runTransition throws", async () => {
       const { runTransition } = await import("../../src/transition/orchestration.js");
       const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");

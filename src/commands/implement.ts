@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { join } from "node:path";
 import { runTransition } from "../transition/orchestration.js";
+import { PreflightValidationError } from "../transition/preflight.js";
 import { withErrorHandling } from "../utils/errors.js";
 import { exists } from "../utils/file-system.js";
 import { resolveProjectPlatform } from "../platform/resolve.js";
@@ -34,23 +35,25 @@ async function runImplement(options: ImplementOptions): Promise<void> {
 
   const platform = await resolveProjectPlatform(projectDir);
 
-  const result = await runTransition(projectDir, { force });
-
-  // Print preflight issues with severity icons
-  if (result.preflightIssues && result.preflightIssues.length > 0) {
-    console.log(chalk.bold("\nPre-flight checks\n"));
-    for (const issue of result.preflightIssues) {
-      console.log(`  ${severityIcon(issue)} ${issue.message}`);
-      if (issue.suggestion) {
-        console.log(chalk.dim(`     ${issue.suggestion}`));
-      }
+  let result;
+  try {
+    result = await runTransition(projectDir, { force });
+  } catch (error) {
+    if (error instanceof PreflightValidationError) {
+      renderPreflightIssues(error.issues);
     }
-    console.log("");
+    throw error;
   }
 
+  // Print preflight issues with severity icons
+  renderPreflightIssues(result.preflightIssues);
+
   // Print warnings
-  if (result.warnings.length > 0) {
-    for (const warning of result.warnings) {
+  const preflightMessages = new Set(result.preflightIssues.map((issue) => issue.message));
+  const warnings = result.warnings.filter((warning) => !preflightMessages.has(warning));
+
+  if (warnings.length > 0) {
+    for (const warning of warnings) {
       console.log(chalk.yellow(`  ! ${warning}`));
     }
     console.log("");
@@ -96,4 +99,19 @@ function severityIcon(issue: PreflightIssue): string {
     case "info":
       return chalk.dim("i");
   }
+}
+
+function renderPreflightIssues(issues: PreflightIssue[]): void {
+  if (issues.length === 0) {
+    return;
+  }
+
+  console.log(chalk.bold("\nPre-flight checks\n"));
+  for (const issue of issues) {
+    console.log(`  ${severityIcon(issue)} ${issue.message}`);
+    if (issue.suggestion) {
+      console.log(chalk.dim(`     ${issue.suggestion}`));
+    }
+  }
+  console.log("");
 }

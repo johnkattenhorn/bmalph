@@ -18,7 +18,7 @@ import {
 } from "./fix-plan.js";
 import { detectTechStack, customizeAgentMd } from "./tech-stack.js";
 import { findArtifactsDir } from "./artifacts.js";
-import { runPreflight } from "./preflight.js";
+import { runPreflight, PreflightValidationError } from "./preflight.js";
 import {
   extractProjectContext,
   generateProjectContextMd,
@@ -81,26 +81,11 @@ export async function runTransition(
   info("Pre-flight validation...");
   const preflightResult = runPreflight(artifactContents, files, stories, parseWarnings);
 
-  for (const issue of preflightResult.issues) {
-    if (issue.severity === "error") {
-      warn(`  ERROR  ${issue.id}: ${issue.message}`);
-      if (issue.suggestion) warn(`         ${issue.suggestion}`);
-    } else if (issue.severity === "warning") {
-      warn(`  WARN   ${issue.id}: ${issue.message}`);
-      if (issue.suggestion) warn(`         ${issue.suggestion}`);
-    } else {
-      info(`  INFO   ${issue.id}: ${issue.message}`);
-    }
-  }
-
   if (!preflightResult.pass) {
     if (options?.force) {
       warn("Pre-flight validation has errors but --force was used, continuing...");
     } else {
-      const errors = preflightResult.issues.filter((i) => i.severity === "error");
-      throw new Error(
-        `Pre-flight validation failed: ${errors.map((e) => e.message).join("; ")}. Use --force to override.`
-      );
+      throw new PreflightValidationError(preflightResult.issues);
     }
   }
 
@@ -128,9 +113,6 @@ export async function runTransition(
   // Detect orphaned completed stories (Bug #2)
   const newStoryIds = new Set(stories.map((s) => s.id));
   const orphanWarnings = detectOrphanedCompletedStories(existingItems, newStoryIds);
-  for (const w of orphanWarnings) {
-    warn(w);
-  }
 
   // Build title maps for title-based merge (Gap 3: renumbered story preservation)
   const completedTitles = buildCompletedTitleMap(existingItems);
@@ -156,9 +138,6 @@ export async function runTransition(
 
   // Detect renumbered stories (Bug #3), skipping auto-preserved ones
   const renumberWarnings = detectRenumberedStories(existingItems, stories, preservedIds);
-  for (const w of renumberWarnings) {
-    warn(w);
-  }
   await atomicWriteFile(fixPlanPath, mergedFixPlan);
   generatedFiles.push({
     path: ".ralph/@fix_plan.md",

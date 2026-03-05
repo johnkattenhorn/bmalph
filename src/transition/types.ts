@@ -103,6 +103,6 @@ export interface TransitionResult {
   storiesCount: number;
   warnings: string[];
   fixPlanPreserved: boolean;
-  preflightIssues?: PreflightIssue[];
+  preflightIssues: PreflightIssue[];
   generatedFiles: GeneratedFile[];
 }

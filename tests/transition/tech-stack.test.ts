@@ -259,6 +259,63 @@ describe("tech-stack", () => {
       expect(stack).not.toBeNull();
       expect(stack!.setup).toBe("npm install");
     });
+
+    it("detects tech stack from Starter Template Evaluation", () => {
+      const content = `# Architecture
+
+## Starter Template Evaluation
+
+- Candidate: Next.js starter with TypeScript
+- Testing: Vitest
+
+## Other
+`;
+      const stack = detectTechStack(content);
+
+      expect(stack).not.toBeNull();
+      expect(stack!.setup).toBe("npm install");
+      expect(stack!.test).toBe("npx vitest run");
+    });
+
+    it("detects tech stack from Core Architectural Decisions", () => {
+      const content = `# Architecture
+
+## Core Architectural Decisions
+
+- Standardize on Node.js 20 with TypeScript
+- Use Jest for automated tests
+
+## Other
+`;
+      const stack = detectTechStack(content);
+
+      expect(stack).not.toBeNull();
+      expect(stack!.setup).toBe("npm install");
+      expect(stack!.test).toBe("npx jest");
+    });
+
+    it("prefers a final decision section over starter template comparisons", () => {
+      const content = `# Architecture
+
+## Starter Template Evaluation
+
+- Candidate A: Next.js starter with TypeScript
+- Candidate B: Python FastAPI service with pytest
+
+## Core Architectural Decisions
+
+- Final stack: Python 3.12 with FastAPI
+- Tests run with pytest
+
+## Other
+`;
+      const stack = detectTechStack(content);
+
+      expect(stack).not.toBeNull();
+      expect(stack!.setup).toBe("pip install -r requirements.txt");
+      expect(stack!.test).toBe("pytest");
+      expect(stack!.build).toBe("python -m build");
+    });
   });
 
   describe("customizeAgentMd", () => {
@@ -377,6 +434,21 @@ Some content without the expected sections.
       expect(result).toContain("npx vitest run");
       expect(result).toContain("npx tsc");
       expect(result).toContain("npm run dev");
+      expect(result).not.toContain('echo "placeholder"');
+    });
+
+    it("replaces sections in CRLF templates", () => {
+      const stack = {
+        setup: "npm install",
+        test: "npx vitest run",
+        build: "npm run build",
+        dev: "npm run dev",
+      };
+      const templateWithCrLf = template.replace(/\n/g, "\r\n");
+
+      const result = customizeAgentMd(templateWithCrLf, stack);
+
+      expect(result).toContain("## Running Tests\r\n\r\n```bash\r\nnpx vitest run\r\n```");
       expect(result).not.toContain('echo "placeholder"');
     });
   });

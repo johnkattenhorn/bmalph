@@ -222,6 +222,27 @@ Third-party API rate limits.
       expect(context.technicalRisks).toContain("Third-party API rate limits.");
     });
 
+    it("extracts scope boundaries from Product Scope", () => {
+      const artifacts = new Map([
+        [
+          "prd.md",
+          `# PRD
+
+## Product Scope
+
+- In scope: project onboarding
+- Out of scope: marketplace billing
+
+## Next
+`,
+        ],
+      ]);
+      const { context } = extractProjectContext(artifacts);
+
+      expect(context.scopeBoundaries).toContain("project onboarding");
+      expect(context.scopeBoundaries).toContain("marketplace billing");
+    });
+
     it("extracts success metrics from KPIs section", () => {
       const artifacts = new Map([
         [

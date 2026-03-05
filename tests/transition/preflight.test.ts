@@ -166,6 +166,14 @@ describe("preflight", () => {
       expect(issues.find((i) => i.id === "W6")).toBeUndefined();
     });
 
+    it("accepts Product Scope as alternative to Scope", () => {
+      const prd = `# PRD\n\n## Executive Summary\n\nSummary.\n\n## Functional Requirements\n\nReqs.\n\n## Non-Functional Requirements\n\nNFRs.\n\n## Product Scope\n\nScope.\n`;
+
+      const issues = validatePrd(prd);
+
+      expect(issues.find((i) => i.id === "W6")).toBeUndefined();
+    });
+
     it("returns multiple warnings for PRD missing all sections", () => {
       const prd = `# PRD\n\nJust some text without proper sections.\n`;
 
@@ -221,6 +229,22 @@ describe("preflight", () => {
 
     it("accepts Technology Stack as alternative to Tech Stack", () => {
       const arch = `# Architecture\n\n## Technology Stack\n\n- React\n- Node.js\n`;
+
+      const issues = validateArchitecture(arch);
+
+      expect(issues.find((i) => i.id === "W7")).toBeUndefined();
+    });
+
+    it("accepts Starter Template Evaluation as a tech stack source", () => {
+      const arch = `# Architecture\n\n## Starter Template Evaluation\n\n- Next.js starter with TypeScript and Vitest\n`;
+
+      const issues = validateArchitecture(arch);
+
+      expect(issues.find((i) => i.id === "W7")).toBeUndefined();
+    });
+
+    it("accepts Core Architectural Decisions as a tech stack source", () => {
+      const arch = `# Architecture\n\n## Core Architectural Decisions\n\n- Use Node.js with TypeScript and Prisma\n`;
 
       const issues = validateArchitecture(arch);
 

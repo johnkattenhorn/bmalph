@@ -32,6 +32,43 @@ import { generateSpecsIndex, formatSpecsIndexMd } from "./specs-index.js";
 import { parseSprintStatus } from "./sprint-status.js";
 import { prepareSpecsDirectory } from "./specs-sync.js";
 
+async function swapSpecsDirectory(specsDir: string, specsTmpDir: string): Promise<void> {
+  const specsOldDir = `${specsDir}.old`;
+  let hasBackup = false;
+
+  if (await exists(specsDir)) {
+    await rm(specsOldDir, { recursive: true, force: true });
+    await rename(specsDir, specsOldDir);
+    hasBackup = true;
+  } else if (await exists(specsOldDir)) {
+    hasBackup = true;
+    debug("Found existing .ralph/specs.old from previous failed transition, preserving backup");
+  } else {
+    debug("No existing .ralph/specs to preserve (first transition)");
+  }
+
+  try {
+    await rename(specsTmpDir, specsDir);
+  } catch (err) {
+    if (hasBackup) {
+      debug(`Specs swap failed, restoring original: ${formatError(err)}`);
+      try {
+        await rename(specsOldDir, specsDir);
+      } catch (restoreErr) {
+        if (!isEnoent(restoreErr)) {
+          debug(`Could not restore .ralph/specs.old: ${formatError(restoreErr)}`);
+        }
+      }
+    }
+
+    throw err;
+  }
+
+  if (hasBackup) {
+    await rm(specsOldDir, { recursive: true, force: true });
+  }
+}
+
 function ensureUniqueStoryIds(stories: Story[]): void {
   const sourceById = new Map<string, string>();
 
@@ -310,8 +347,7 @@ export async function runTransition(
   }
 
   info("Copying specs to .ralph/specs/...");
-  await rm(specsDir, { recursive: true, force: true });
-  await rename(specsTmpDir, specsDir);
+  await swapSpecsDirectory(specsDir, specsTmpDir);
   generatedFiles.push({ path: ".ralph/specs/", action: "updated" });
 
   // Generate SPECS_INDEX.md for intelligent spec reading

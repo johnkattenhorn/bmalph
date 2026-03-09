@@ -25,6 +25,15 @@ describe("resolveProjectPlatform", () => {
     expect(platform.id).toBe("claude-code");
   });
 
+  it("falls back to detected cursor marker when config is missing", async () => {
+    await mkdir(join(testDir, ".cursor"), { recursive: true });
+
+    const { resolveProjectPlatform } = await import("../../src/platform/resolve.js");
+    const platform = await resolveProjectPlatform(testDir);
+
+    expect(platform.id).toBe("cursor");
+  });
+
   it("returns claude-code when config has no platform field", async () => {
     await mkdir(join(testDir, "bmalph"), { recursive: true });
     await writeFile(

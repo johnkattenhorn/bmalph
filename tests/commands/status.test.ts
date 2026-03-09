@@ -26,11 +26,15 @@ describe("status command", () => {
     await rm(testDir, { recursive: true, force: true });
   });
 
-  async function setupProject() {
+  async function setupProject(platform?: string) {
     await mkdir(join(testDir, "bmalph"), { recursive: true });
     await writeFile(
       join(testDir, "bmalph/config.json"),
-      JSON.stringify({ name: "test", createdAt: new Date().toISOString() })
+      JSON.stringify({
+        name: "test",
+        createdAt: new Date().toISOString(),
+        ...(platform ? { platform } : {}),
+      })
     );
   }
 
@@ -137,6 +141,20 @@ describe("status command", () => {
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("/analyst");
+    });
+
+    it("uses Cursor-specific BMAD guidance instead of slash commands", async () => {
+      await setupProject("cursor");
+      await setupState({ currentPhase: 1, status: "planning" });
+
+      const { runStatus } = await import("../../src/commands/status.js");
+      await runStatus({ projectDir: testDir });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("_bmad/COMMANDS.md");
+      expect(output).toContain("run the BMAD master agent");
+      expect(output).not.toContain("/analyst");
+      expect(output).not.toContain("/pm");
     });
 
     it("suggests bmalph implement for phase 3", async () => {
@@ -355,6 +373,20 @@ describe("status command", () => {
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("/architect");
+    });
+
+    it("uses Cursor-specific artifact guidance without slash commands", async () => {
+      await setupProject("cursor");
+      await setupArtifacts(["prd.md"]);
+
+      const { runStatus } = await import("../../src/commands/status.js");
+      await runStatus({ projectDir: testDir });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("_bmad/COMMANDS.md");
+      expect(output).toContain("run the BMAD master agent");
+      expect(output).not.toContain("/architect");
+      expect(output).not.toContain("/create-epics-stories");
     });
   });
 

@@ -85,13 +85,19 @@ Ralph maintains session continuity across loop iterations using `--resume` with 
 
 Ralph uses `--resume <session_id>` instead of `--continue` to resume sessions. This ensures Ralph only resumes its own saved sessions and avoids hijacking unrelated active sessions.
 
+This applies to every driver that exposes resumable IDs today:
+
+- Claude Code
+- OpenAI Codex
+- Cursor
+
 ### Session Files
 
 | File | Purpose |
 |------|---------|
 | `.ralph/.ralph_session` | Current session ID and timestamps |
 | `.ralph/.ralph_session_history` | History of last 50 session transitions |
-| `.ralph/.claude_session_id` | Persisted driver session ID (shared filename for historical reasons) |
+| `.ralph/.claude_session_id` | Persisted driver session ID (shared filename for historical reasons; used by Claude Code, Codex, and Cursor) |
 
 ### Session Lifecycle
 
@@ -256,7 +262,9 @@ bash .ralph/ralph_loop.sh --monitor --live # Live streaming with tmux monitoring
 
 ### How It Works
 
-- Switches output format to `stream-json` and pipes through `jq` for human-readable display
+- Live mode switches the active driver to its structured streaming format and pipes the stream through `jq`
+- Cursor background loop execution stays on `json` output and switches to `stream-json` for live display
+- Claude Code also uses `stream-json` for live display, while Codex streams its native JSONL events directly
 - Shows text deltas and tool invocations in real-time
 - Requires `jq` and `stdbuf` (from coreutils); falls back to background mode if unavailable
 
@@ -341,6 +349,20 @@ When using `--monitor` with `--live`, tmux creates a 3-pane layout:
 2. Start a new session with `bash .ralph/ralph_loop.sh --reset-session`
 3. Context will be rebuilt from `@fix_plan.md` and `specs/`
 
+#### Cursor preflight fails
+
+**Symptoms:** `bmalph doctor` or `bmalph run --driver cursor` fails before the loop starts
+
+**Causes:**
+- `command -v jq` fails in the bash environment Ralph uses
+- `command -v cursor-agent` fails in that same bash environment
+- `cursor-agent status` reports an authentication problem
+
+**Solutions:**
+1. Run `command -v jq` in the same bash shell Ralph uses and install `jq` if missing
+2. Run `command -v cursor-agent` and ensure the official Cursor CLI is on the bash `PATH`
+3. Run `cursor-agent status` and sign in to Cursor before starting Ralph
+
 ### Diagnostic Commands
 
 ```bash
@@ -383,11 +405,13 @@ Loop execution logs are stored in `.ralph/logs/`:
   "calls_made_this_hour": 25,
   "max_calls_per_hour": 100,
   "last_action": "description",
-  "status": "running|paused|complete",
+  "status": "running|completed|halted|paused|stopped|success|graceful_exit|error",
   "exit_reason": "reason (if exited)",
   "next_reset": "timestamp for rate limit reset"
 }
 ```
+
+`bmalph status` normalizes these raw bash values to `running`, `blocked`, `completed`, `not_started`, or `unknown`.
 
 ---
 

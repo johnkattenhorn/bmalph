@@ -7,7 +7,7 @@
 [![CI](https://github.com/LarsCowe/bmalph/actions/workflows/ci.yml/badge.svg)](https://github.com/LarsCowe/bmalph/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/LarsCowe/bmalph/branch/main/graph/badge.svg)](https://codecov.io/gh/LarsCowe/bmalph)
 
-[BMAD-METHOD](https://github.com/bmad-code-org/BMAD-METHOD) planning + [Ralph](https://github.com/snarktank/ralph) autonomous implementation, glued by slash commands.
+[BMAD-METHOD](https://github.com/bmad-code-org/BMAD-METHOD) planning + [Ralph](https://github.com/snarktank/ralph) autonomous implementation, wired through platform-specific instructions, skills, and command indexes.
 
 <p align="center">
   <img src="docs/bmalph-diagram-light.svg" alt="bmalph workflow diagram" width="800" />
@@ -70,7 +70,8 @@ cd my-project
 bmalph init --name my-project
 
 # To target a specific platform, add --platform (e.g. codex, cursor, windsurf)
-# Without --platform, bmalph auto-detects or prompts interactively
+# Without --platform, bmalph auto-detects strong project markers and
+# prompts interactively when detection is ambiguous or missing
 ```
 
 ## Workflow
@@ -84,13 +85,15 @@ bmalph init
 
 **Platform resolution:** `--platform` flag > auto-detect from project markers > interactive prompt > default `claude-code`
 
+Strong markers such as `.cursor/`, `.claude/`, `.windsurf/`, `.github/copilot-instructions.md`, and `.aider.conf.yml` are auto-detected directly. Root-only `AGENTS.md` and `CLAUDE.md` are treated as weak hints and may still trigger the interactive platform prompt.
+
 This installs:
 
 - `_bmad/` — BMAD agents and workflows
 - `.ralph/` — Ralph loop, libs, templates (drivers for claude-code, codex, copilot, and cursor)
 - `bmalph/` — State management (config.json, stores selected platform)
 - Updates the platform's instructions file with BMAD workflow instructions (e.g. `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/bmad.mdc`)
-- Installs slash commands for supported platforms (Claude Code: `.claude/commands/` directory; Codex: `.agents/skills/`; other platforms: `_bmad/COMMANDS.md` reference index)
+- Delivers BMAD commands using the platform's native mechanism (Claude Code: `.claude/commands/`; Codex: `.agents/skills/`; Cursor, Windsurf, Copilot, and Aider: `_bmad/COMMANDS.md`)
 
 ### Migrating from standalone BMAD
 
@@ -102,7 +105,12 @@ If you already have BMAD installed (a `_bmad/` directory), `bmalph init` works a
 
 ### Step 2: Plan with BMAD (Phases 1-3)
 
-Work interactively with BMAD agents in your AI coding assistant. On Claude Code, use the `/bmalph` slash command to see your current phase and available commands. On other platforms, ask the agent about BMAD phases or run `bmalph status` in terminal.
+Work interactively with BMAD agents in your AI coding assistant.
+
+- **Claude Code** — use `/bmalph` to see your current phase and available commands.
+- **OpenAI Codex** — use Codex Skills such as `$analyst` and `$create-prd`.
+- **Cursor** — Read `_bmad/COMMANDS.md` and ask Cursor to run the BMAD master agent.
+- **Windsurf, Copilot, Aider** — use `_bmad/COMMANDS.md` as the command reference and ask the assistant to follow the named BMAD workflow.
 
 | Phase         | Agent            | Commands           |
 | ------------- | ---------------- | ------------------ |
@@ -110,7 +118,7 @@ Work interactively with BMAD agents in your AI coding assistant. On Claude Code,
 | 2 Planning    | PM / UX Designer | CP, VP, EP, CU     |
 | 3 Solutioning | Architect / PM   | CA, CE, IR         |
 
-Validation commands (`/validate-brief`, `/validate-prd`, `/validate-ux`, `/validate-architecture`, `/validate-epics-stories`) run the same workflow in Validate mode.
+Validation commands (`validate-brief`, `validate-prd`, `validate-ux`, `validate-architecture`, `validate-epics-stories`) run the same workflow in Validate mode. In Claude Code, invoke them as slash commands; on other platforms use the equivalent entry from `_bmad/COMMANDS.md` or Codex Skills.
 
 **Phase 1 — Analysis**
 
@@ -152,7 +160,7 @@ Available in any phase for supporting tasks:
 - `AR` Adversarial Review — critical content review for QA
 - `US` Update Standards — update tech-writer documentation standards
 - `EC` Explain Concept — create technical explanations with examples
-- `/bmad-help` — list all available commands
+- `_bmad/COMMANDS.md` — generated command reference for platforms without native slash commands
 
 > **Note:** `EP` means Edit PRD in the bmm workflow (Phase 2) and Editorial Review — Prose in the core module. `PM` is Party Mode in core. The bmm meanings are the primary workflow codes.
 
@@ -284,13 +292,14 @@ BMAD (add Epic 2) → bmalph implement → Ralph sees changes + picks up Epic 2
 | ----------------- | ------------------------------------------------ |
 | `--interval <ms>` | Refresh interval in milliseconds (default: 2000) |
 
-## Slash Commands
+## Command Delivery
 
-bmalph installs 51 slash commands (45 BMAD + 6 bmalph). Command delivery varies by platform:
+bmalph bundles 51 BMAD and bmalph command definitions. Delivery varies by platform:
 
 - **Claude Code** — installed as files in `.claude/commands/` (invoke with `/command-name`)
 - **OpenAI Codex** — delivered as Codex Skills in `.agents/skills/` (invoke with `$command-name`)
-- **Cursor, Windsurf, Copilot, Aider** — discoverable via `_bmad/COMMANDS.md` reference index
+- **Cursor** — discoverable via `_bmad/COMMANDS.md`; ask Cursor to run the BMAD master agent
+- **Windsurf, Copilot, Aider** — discoverable via `_bmad/COMMANDS.md` reference index
 
 Key commands (Claude Code syntax):
 
@@ -311,7 +320,11 @@ Key commands (Claude Code syntax):
 | `/create-epics-stories` | Create epics and stories            |
 | `/bmad-help`            | List all BMAD commands              |
 
-For full list, run `/bmad-help` in Claude Code.
+For the full list:
+
+- Claude Code: run `/bmad-help`
+- OpenAI Codex: inspect `.agents/skills/`
+- Cursor, Windsurf, Copilot, Aider: open `_bmad/COMMANDS.md`
 
 ### Transition to Ralph
 
@@ -322,8 +335,9 @@ Use `bmalph implement` (or `/bmalph-implement` in Claude Code) to transition fro
 ```
 project/
 ├── _bmad/                     # BMAD agents, workflows, core
-│   ├── _config/               # Generated configuration
-│   │   ├── config.yaml        # Platform config
+│   ├── config.yaml            # Generated platform/project config
+│   ├── COMMANDS.md            # Generated command reference index
+│   ├── _config/               # Generated manifests
 │   │   ├── task-manifest.csv  # Combined task manifest
 │   │   ├── workflow-manifest.csv # Combined workflow manifest
 │   │   └── bmad-help.csv      # Combined help manifest
@@ -380,10 +394,10 @@ The instructions file and command directory depend on the configured platform. S
 
 Ralph is a bash loop that spawns fresh AI coding sessions using a **platform driver** matching the configured platform:
 
-- **Claude Code driver** — invokes `claude` with `--allowedTools` and session resume
-- **Codex driver** — invokes `codex exec` with `--sandbox workspace-write`
+- **Claude Code driver** — invokes `claude` with `--output-format json`, `--allowedTools`, and explicit `--resume <session_id>`
+- **Codex driver** — invokes `codex exec --json --sandbox workspace-write` with explicit `--resume <session_id>`
 - **Copilot driver** _(experimental)_ — invokes `copilot --autopilot --yolo` with plain-text output
-- **Cursor driver** _(experimental)_ — invokes `cursor-agent --print --force` (or compatible `agent` installs) with NDJSON streaming
+- **Cursor driver** _(experimental)_ — invokes `cursor-agent -p --force --output-format json`, persists `session_id` for `--resume`, and switches to `stream-json` only for live output
 
 Each iteration:
 
@@ -397,6 +411,12 @@ Safety mechanisms:
 - **Circuit breaker** — prevents infinite loops on failing stories
 - **Response analyzer** — detects stuck or repeating outputs
 - **Completion** — loop exits when all `@fix_plan.md` items are checked off
+
+Cursor-specific runtime checks:
+
+- `bmalph doctor` validates `command -v jq` in the bash environment Ralph uses
+- `bmalph doctor` validates `command -v cursor-agent` and `cursor-agent status`
+- `bmalph run --driver cursor` runs the same bash-scoped preflight before the loop starts
 
 Run `bmalph run` to start the loop with a live dashboard, or `bmalph run --no-dashboard` for headless mode. Press `Ctrl+C` to stop the loop at any time.
 
@@ -439,7 +459,7 @@ ls -la .ralph/
 | Scenario                      | Solution                                                                     |
 | ----------------------------- | ---------------------------------------------------------------------------- |
 | Commands fail before init     | Run `bmalph init` first                                                      |
-| Transition finds no stories   | Create stories in Phase 3 with `/create-epics-stories`                       |
+| Transition finds no stories   | Create stories in Phase 3 with `/create-epics-stories`, the matching Codex Skill, or the `_bmad/COMMANDS.md` entry |
 | Ralph stops mid-loop          | Circuit breaker detected stagnation. Check `.ralph/logs/`                    |
 | Doctor reports version drift  | Run `bmalph upgrade` to update bundled assets                                |
 | Wrong platform detected       | Re-run `bmalph init --platform <id>` with the correct platform               |
@@ -450,7 +470,10 @@ ls -la .ralph/
 `bmalph run --driver cursor` is experimental on Windows and is designed for Git Bash.
 
 - `bmalph` prefers a working Git Bash install instead of Windows `bash.exe` shims.
-- The Cursor driver detects `cursor-agent`, `cursor-agent.cmd`, `agent`, `agent.cmd`, and `%LOCALAPPDATA%\\cursor-agent\\agent.cmd`.
+- The official binary is `cursor-agent`. The driver also accepts `cursor-agent.cmd`, `agent`, `agent.cmd`, and `%LOCALAPPDATA%\\cursor-agent\\*.cmd` as compatibility fallbacks.
+- The main Ralph loop uses `cursor-agent -p --force --output-format json` and stores Cursor's `session_id` for `--resume` on the next loop.
+- Live display switches to `stream-json`; background execution stays on JSON mode for reliable parsing.
+- Cursor preflight is bash-scoped: `command -v jq`, `command -v cursor-agent`, and `cursor-agent status` must all succeed in the same shell Ralph uses.
 - On Windows, the driver sends Cursor a short bootstrap prompt that tells it to read the Ralph files from `.ralph/` instead of trying to inline the full prompt on the command line.
 
 ### Reset Installation
@@ -545,18 +568,33 @@ claude
 bmalph run
 ```
 
-**Other platforms:**
+**OpenAI Codex:**
 
 ```bash
 # 1. Open your project in your AI coding assistant
 
-# 2. Ask the agent about BMAD phases to start planning
-#    Or check status from terminal: bmalph status
+# 2. Use Codex Skills such as $analyst, $create-prd, and $architect
+#    See .agents/skills/ and _bmad/COMMANDS.md for the full catalog
 
-# 3. Reference BMAD agents by name (analyst, pm, architect)
-#    Follow phases: Analysis → Planning → Solutioning
+# 3. Follow phases: Analysis -> Planning -> Solutioning
 
-# 4. For full tier platforms (Codex, Copilot, Cursor), transition to Ralph:
+# 4. Transition to Ralph
+#    Run: bmalph implement
+#    Then: bmalph run
+```
+
+**Cursor, Copilot, Windsurf, Aider:**
+
+```bash
+# 1. Open your project in your AI coding assistant
+
+# 2. Read _bmad/COMMANDS.md for the available BMAD agents and workflows
+#    On Cursor specifically: ask Cursor to run the BMAD master agent
+
+# 3. Follow phases: Analysis -> Planning -> Solutioning
+#    Or check progress from terminal: bmalph status
+
+# 4. For full tier platforms (Cursor and Copilot), transition to Ralph:
 #    Run: bmalph implement
 #    Then: bmalph run
 ```

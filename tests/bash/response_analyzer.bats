@@ -31,9 +31,9 @@ teardown() {
     assert_output "json"
 }
 
-@test "detect_output_format treats unsupported NDJSON as text" {
+@test "detect_output_format identifies Cursor stream-json output" {
     run detect_output_format "$FIXTURES_DIR/cursor_ndjson_response.jsonl"
-    assert_output "text"
+    assert_output "json"
 }
 
 @test "detect_output_format identifies text file" {
@@ -115,6 +115,34 @@ teardown() {
 # parse_json_response — CLI object format
 # ===========================================================================
 
+@test "parse_json_response parses Cursor JSON result object" {
+    _skip_if_xargs_broken
+    local result="$RALPH_DIR/result.json"
+    parse_json_response "$FIXTURES_DIR/cursor_json_response.json" "$result"
+
+    run jq -r '.exit_signal' "$result"
+    assert_output "true"
+
+    run jq -r '.session_id' "$result"
+    assert_output "cursor-session-123"
+}
+
+@test "parse_json_response parses Cursor JSON result object without xargs" {
+    xargs() {
+        return 127
+    }
+    export -f xargs
+
+    local result="$RALPH_DIR/result.json"
+    parse_json_response "$FIXTURES_DIR/cursor_json_response.json" "$result"
+
+    run jq -r '.exit_signal' "$result"
+    assert_output "true"
+
+    run jq -r '.session_id' "$result"
+    assert_output "cursor-session-123"
+}
+
 @test "parse_json_response parses CLI object with RALPH_STATUS" {
     _skip_if_xargs_broken
     local result="$RALPH_DIR/result.json"
@@ -188,6 +216,21 @@ EOF
 # parse_json_response — Codex JSONL format
 # ===========================================================================
 
+@test "parse_json_response parses Cursor stream-json events with terminal result" {
+    _skip_if_xargs_broken
+    local result="$RALPH_DIR/result.json"
+    parse_json_response "$FIXTURES_DIR/cursor_ndjson_response.jsonl" "$result"
+
+    run jq -r '.exit_signal' "$result"
+    assert_output "true"
+
+    run jq -r '.summary' "$result"
+    assert_output --partial "Completed the auth module updates."
+
+    run jq -r '.session_id' "$result"
+    assert_output "cursor-session-123"
+}
+
 @test "parse_json_response parses Codex JSONL agent message with RALPH_STATUS" {
     _skip_if_xargs_broken
     local result="$RALPH_DIR/result.json"
@@ -209,11 +252,6 @@ EOF
 
     run jq -r '.session_id' "$result"
     assert_output "codex-thread-456"
-}
-
-@test "parse_json_response fails for unsupported NDJSON formats" {
-    run parse_json_response "$FIXTURES_DIR/cursor_ndjson_response.jsonl" "$RALPH_DIR/result.json"
-    assert_failure
 }
 
 # ===========================================================================
@@ -296,17 +334,20 @@ EOF
     assert_output "true"
 }
 
-@test "analyze_response falls back to text for unsupported NDJSON formats" {
+@test "analyze_response parses Cursor stream-json with structured confidence" {
     local analysis="$RALPH_DIR/.response_analysis"
 
     run analyze_response "$FIXTURES_DIR/cursor_ndjson_response.jsonl" 6 "$analysis"
     assert_success
 
     run jq -r '.output_format' "$analysis"
-    assert_output "text"
+    assert_output "json"
 
     run jq -r '.analysis.exit_signal' "$analysis"
-    assert_output "false"
+    assert_output "true"
+
+    run jq -r '.analysis.work_summary' "$analysis"
+    assert_output --partial "Completed the auth module updates."
 }
 
 @test "analyze_response does not abort on Codex JSONL without agent message" {

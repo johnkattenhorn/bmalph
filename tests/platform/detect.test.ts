@@ -26,10 +26,12 @@ describe("detectPlatform", () => {
     expect(result.detected).toBe("claude-code");
   });
 
-  it("returns codex when AGENTS.md exists", async () => {
+  it("treats root AGENTS.md as ambiguous between Codex and Cursor", async () => {
     await writeFile(join(testDir, "AGENTS.md"), "# Agents");
     const result = await detectPlatform(testDir);
-    expect(result.detected).toBe("codex");
+    expect(result.detected).toBeNull();
+    expect(result.candidates).toContain("codex");
+    expect(result.candidates).toContain("cursor");
   });
 
   it("returns null when no markers found", async () => {
@@ -58,6 +60,27 @@ describe("detectPlatform", () => {
     await mkdir(join(testDir, ".cursor"), { recursive: true });
     const result = await detectPlatform(testDir);
     expect(result.detected).toBe("cursor");
+  });
+
+  it("lets .cursor take precedence over root AGENTS.md and CLAUDE.md", async () => {
+    await mkdir(join(testDir, ".cursor"), { recursive: true });
+    await writeFile(join(testDir, "AGENTS.md"), "# Agents");
+    await writeFile(join(testDir, "CLAUDE.md"), "# Claude");
+
+    const result = await detectPlatform(testDir);
+
+    expect(result.detected).toBe("cursor");
+    expect(result.candidates).toEqual(["cursor"]);
+  });
+
+  it("treats root CLAUDE.md as ambiguous between Claude Code and Cursor", async () => {
+    await writeFile(join(testDir, "CLAUDE.md"), "# Claude");
+
+    const result = await detectPlatform(testDir);
+
+    expect(result.detected).toBeNull();
+    expect(result.candidates).toContain("claude-code");
+    expect(result.candidates).toContain("cursor");
   });
 
   it("returns copilot when .github/copilot-instructions.md exists", async () => {

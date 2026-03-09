@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { mockResolveBashCommand } = vi.hoisted(() => ({
+const { mockResolveBashCommand, mockRunBashCommand } = vi.hoisted(() => ({
   mockResolveBashCommand: vi.fn(),
+  mockRunBashCommand: vi.fn(),
 }));
 
 vi.mock("node:fs/promises", () => ({
@@ -27,11 +28,12 @@ vi.mock("../../src/utils/constants.js", () => ({
 
 vi.mock("../../src/run/ralph-process.js", () => ({
   resolveBashCommand: mockResolveBashCommand,
+  runBashCommand: mockRunBashCommand,
 }));
 
 import { readFile, stat } from "node:fs/promises";
 import { readJsonFile } from "../../src/utils/json.js";
-import { resolveBashCommand } from "../../src/run/ralph-process.js";
+import { resolveBashCommand, runBashCommand } from "../../src/run/ralph-process.js";
 import {
   checkNodeVersion,
   checkBash,
@@ -49,6 +51,7 @@ const mockReadFile = vi.mocked(readFile);
 const mockStat = vi.mocked(stat);
 const mockReadJsonFile = vi.mocked(readJsonFile);
 const mockedResolveBashCommand = vi.mocked(resolveBashCommand);
+const mockedRunBashCommand = vi.mocked(runBashCommand);
 
 function enoentError(): NodeJS.ErrnoException {
   const err = new Error("ENOENT: no such file or directory") as NodeJS.ErrnoException;
@@ -144,9 +147,36 @@ describe("checkBash", () => {
 
 describe("checkJq", () => {
   it("uses the label 'jq available'", async () => {
+    mockedRunBashCommand.mockResolvedValue({ exitCode: 0, stdout: "/usr/bin/jq\n", stderr: "" });
     const result = await checkJq("/projects/webapp");
 
     expect(result.label).toBe("jq available");
+  });
+
+  it("passes when bash can resolve jq", async () => {
+    mockedRunBashCommand.mockResolvedValue({ exitCode: 0, stdout: "/usr/bin/jq\n", stderr: "" });
+
+    const result = await checkJq("/projects/webapp");
+
+    expect(result.passed).toBe(true);
+    expect(result.hint).toBeUndefined();
+  });
+
+  it("fails when bash cannot see jq on Windows", async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+
+    try {
+      mockedRunBashCommand.mockResolvedValue({ exitCode: 1, stdout: "", stderr: "" });
+
+      const result = await checkJq("/projects/webapp");
+
+      expect(result.passed).toBe(false);
+      expect(result.detail).toBe("jq not found in bash PATH");
+      expect(result.hint).toContain("jq");
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+    }
   });
 });
 

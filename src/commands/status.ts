@@ -35,6 +35,10 @@ interface StatusOutput {
   completionMismatch?: boolean;
 }
 
+function getCursorNextAction(): string {
+  return "Read _bmad/COMMANDS.md and ask Cursor to run the BMAD master agent";
+}
+
 export async function statusCommand(options: StatusOptions): Promise<void> {
   await withErrorHandling(() => runStatus(options));
 }
@@ -60,13 +64,16 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     ralphStatus = await readRalphStatus(projectDir);
   }
 
+  // Resolve platform for next action hints
+  const platform = await resolveProjectPlatform(projectDir);
+
   // Scan artifacts for phases 1-3 to detect actual progress
   let artifactScan: ProjectArtifactScan | null = null;
   let phase = storedPhase;
   let phaseDetected = false;
 
   if (phase < 4) {
-    artifactScan = await scanProjectArtifacts(projectDir);
+    artifactScan = await scanProjectArtifacts(projectDir, platform.id);
     if (artifactScan && artifactScan.detectedPhase > phase) {
       phase = artifactScan.detectedPhase;
       phaseDetected = true;
@@ -75,9 +82,6 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
   const phaseName = getPhaseLabel(phase);
   const phaseInfo = getPhaseInfo(phase);
-
-  // Resolve platform for next action hints
-  const platform = await resolveProjectPlatform(projectDir);
 
   // Determine next action — use artifact-based suggestion when available
   const nextAction =
@@ -207,8 +211,14 @@ function getNextAction(
 
   switch (phase) {
     case 1:
+      if (platform.id === "cursor") {
+        return getCursorNextAction();
+      }
       return "Run /analyst to start analysis";
     case 2:
+      if (platform.id === "cursor") {
+        return getCursorNextAction();
+      }
       return "Run /pm to create PRD";
     case 3:
       return "Run: bmalph implement";

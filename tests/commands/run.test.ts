@@ -23,6 +23,10 @@ vi.mock("../../src/run/run-dashboard.js", () => ({
   startRunDashboard: vi.fn(),
 }));
 
+vi.mock("../../src/platform/cursor-runtime-checks.js", () => ({
+  validateCursorRuntime: vi.fn(),
+}));
+
 describe("runCommand", () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
   let consoleSpy: ReturnType<typeof vi.spyOn>;
@@ -116,6 +120,7 @@ describe("runCommand", () => {
       const { validateBashAvailable, validateRalphLoop, spawnRalphLoop } =
         await import("../../src/run/ralph-process.js");
       const { startRunDashboard } = await import("../../src/run/run-dashboard.js");
+      const { validateCursorRuntime } = await import("../../src/platform/cursor-runtime-checks.js");
 
       vi.mocked(readConfig).mockResolvedValue({
         name: "test",
@@ -134,6 +139,7 @@ describe("runCommand", () => {
       );
       vi.mocked(validateBashAvailable).mockResolvedValue(undefined);
       vi.mocked(validateRalphLoop).mockResolvedValue(undefined);
+      vi.mocked(validateCursorRuntime).mockResolvedValue(undefined);
       vi.mocked(spawnRalphLoop).mockReturnValue({
         child: { pid: 123 },
         state: "running",
@@ -156,6 +162,46 @@ describe("runCommand", () => {
       expect(spawnRalphLoop).toHaveBeenCalledWith("/test/project", id, {
         inheritStdio: false,
       });
+      if (id === "cursor") {
+        expect(validateCursorRuntime).toHaveBeenCalledWith("/test/project");
+      }
+    });
+
+    it("fails when Cursor runtime preflight fails", async () => {
+      const { readConfig } = await import("../../src/utils/config.js");
+      const { isPlatformId, getPlatform } = await import("../../src/platform/registry.js");
+      const { validateBashAvailable, validateRalphLoop } =
+        await import("../../src/run/ralph-process.js");
+      const { validateCursorRuntime } = await import("../../src/platform/cursor-runtime-checks.js");
+
+      vi.mocked(readConfig).mockResolvedValue({
+        name: "test",
+        description: "",
+        createdAt: "2026-02-28",
+        platform: "cursor",
+      });
+      vi.mocked(isPlatformId).mockReturnValue(true);
+      vi.mocked(getPlatform).mockReturnValue(
+        mockPlatform({ id: "cursor", displayName: "Cursor", tier: "full", experimental: true })
+      );
+      vi.mocked(validateBashAvailable).mockResolvedValue(undefined);
+      vi.mocked(validateRalphLoop).mockResolvedValue(undefined);
+      vi.mocked(validateCursorRuntime).mockRejectedValue(
+        new Error("cursor-agent is not authenticated")
+      );
+
+      const { runCommand } = await import("../../src/commands/run.js");
+      await runCommand({
+        projectDir: "/test/project",
+        driver: "cursor",
+        interval: "2000",
+        dashboard: true,
+      });
+
+      expect(process.exitCode).toBe(1);
+      const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(errorOutput).toContain("cursor-agent");
+      expect(errorOutput).toContain("authenticated");
     });
 
     it("fails when interval is below 500ms", async () => {

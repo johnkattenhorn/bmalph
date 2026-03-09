@@ -2,6 +2,7 @@ import { readConfig } from "../utils/config.js";
 import { isEnoent, formatError } from "../utils/errors.js";
 import { warn } from "../utils/logger.js";
 import { getPlatform } from "./registry.js";
+import { detectPlatform } from "./detect.js";
 import type { Platform } from "./types.js";
 
 /**
@@ -21,5 +22,11 @@ export async function resolveProjectPlatform(projectDir: string): Promise<Platfo
       warn(`Failed to read project config: ${formatError(err)}`);
     }
   }
+
+  const detection = await detectPlatform(projectDir);
+  if (detection.detected) {
+    return getPlatform(detection.detected);
+  }
+
   return getPlatform("claude-code");
 }

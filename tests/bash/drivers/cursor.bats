@@ -43,6 +43,18 @@ teardown() {
     [[ "$output" =~ agent\.cmd$ ]]
 }
 
+@test "driver_cli_binary prefers LOCALAPPDATA cursor-agent.cmd on Windows" {
+    export OSTYPE="msys"
+    export LOCALAPPDATA="$RALPH_DIR/localappdata"
+    mkdir -p "$LOCALAPPDATA/cursor-agent"
+    printf '@echo off\r\n' > "$LOCALAPPDATA/cursor-agent/cursor-agent.cmd"
+
+    run driver_cli_binary
+
+    assert_success
+    [[ "$output" =~ cursor-agent\.cmd$ ]]
+}
+
 @test "driver_cli_binary detects agent.cmd on PATH on Windows" {
     export OSTYPE="msys"
     mkdir -p "$RALPH_DIR/windows-bin"
@@ -138,18 +150,18 @@ teardown() {
     driver_build_command "$prompt_file" "" ""
 
     local args_str="${CLAUDE_CMD_ARGS[*]}"
-    [[ "$args_str" =~ "--print" ]]
+    [[ "$args_str" =~ "-p" ]]
     [[ "$args_str" =~ "--force" ]]
 }
 
-@test "driver_build_command includes output-format stream-json" {
+@test "driver_build_command includes output-format json" {
     local prompt_file="$RALPH_DIR/prompt.md"
     echo "Test prompt" > "$prompt_file"
 
     driver_build_command "$prompt_file" "" ""
 
     local args_str="${CLAUDE_CMD_ARGS[*]}"
-    [[ "$args_str" =~ "--output-format stream-json" ]]
+    [[ "$args_str" =~ "--output-format json" ]]
 }
 
 @test "driver_build_command prepends context to prompt" {
@@ -178,7 +190,7 @@ teardown() {
     [[ "$last_arg" =~ "Implement auth module" ]]
 }
 
-@test "driver_build_command ignores session IDs because resume is not supported" {
+@test "driver_build_command adds resume when session continuity is enabled" {
     local prompt_file="$RALPH_DIR/prompt.md"
     echo "Test prompt" > "$prompt_file"
 
@@ -186,7 +198,7 @@ teardown() {
     driver_build_command "$prompt_file" "" "session-cursor-456"
 
     local args_str="${CLAUDE_CMD_ARGS[*]}"
-    [[ ! "$args_str" =~ "--resume" ]]
+    [[ "$args_str" =~ "--resume session-cursor-456" ]]
 }
 
 @test "driver_build_command skips session when CLAUDE_USE_CONTINUE is false" {
@@ -256,17 +268,19 @@ teardown() {
 # driver_supports_sessions
 # ===========================================================================
 
-@test "driver_supports_sessions returns false" {
+@test "driver_supports_sessions returns success" {
     run driver_supports_sessions
-    assert_failure
+    assert_success
 }
 
 # ===========================================================================
 # driver_stream_filter
 # ===========================================================================
 
-@test "driver_stream_filter contains text extraction pattern" {
+@test "driver_stream_filter contains assistant delta extraction and tool call activity" {
     run driver_stream_filter
     assert_success
-    assert_output 'select(.type == "text") | .content // empty'
+    assert_output --partial '.type == "assistant"'
+    assert_output --partial '.message.content[]?'
+    assert_output --partial '.type == "tool_call"'
 }

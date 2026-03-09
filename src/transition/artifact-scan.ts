@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 import { relative } from "node:path";
 import { findArtifactsDir } from "./artifacts.js";
 import { ARTIFACT_DEFINITIONS } from "../utils/artifact-definitions.js";
+import type { PlatformId } from "../platform/types.js";
 
 export interface ArtifactClassification {
   phase: number;
@@ -26,6 +27,10 @@ export interface ProjectArtifactScan {
   missing: string[];
   phases: PhaseArtifacts;
   nextAction: string;
+}
+
+function getCursorNextAction(): string {
+  return "Read _bmad/COMMANDS.md and ask Cursor to run the BMAD master agent for the next BMAD workflow";
 }
 
 export function classifyArtifact(filename: string): ArtifactClassification | null {
@@ -73,8 +78,24 @@ export function getMissing(phases: PhaseArtifacts): string[] {
   return missing;
 }
 
-export function suggestNext(phases: PhaseArtifacts, detectedPhase: number): string {
+export function suggestNext(
+  phases: PhaseArtifacts,
+  detectedPhase: number,
+  platformId?: PlatformId
+): string {
   const foundNames = new Set([...phases[1], ...phases[2], ...phases[3]].map((a) => a.name));
+
+  if (platformId === "cursor") {
+    const allPlanningArtifactsPresent =
+      foundNames.has("PRD") &&
+      foundNames.has("Architecture") &&
+      foundNames.has("Epics & Stories") &&
+      foundNames.has("Readiness Report");
+
+    if (!allPlanningArtifactsPresent) {
+      return getCursorNextAction();
+    }
+  }
 
   if (detectedPhase <= 1 && phases[1].length === 0) {
     return "Run /analyst to start analysis";
@@ -100,7 +121,8 @@ export function suggestNext(phases: PhaseArtifacts, detectedPhase: number): stri
 }
 
 export async function scanProjectArtifacts(
-  projectDir: string
+  projectDir: string,
+  platformId?: PlatformId
 ): Promise<ProjectArtifactScan | null> {
   const artifactsDir = await findArtifactsDir(projectDir);
   if (!artifactsDir) {
@@ -111,7 +133,7 @@ export async function scanProjectArtifacts(
   const phases = scanArtifacts(files);
   const detectedPhase = detectPhase(phases);
   const missing = getMissing(phases);
-  const nextAction = suggestNext(phases, detectedPhase);
+  const nextAction = suggestNext(phases, detectedPhase, platformId);
   const relativeDir = relative(projectDir, artifactsDir).replace(/\\/g, "/");
 
   const found = files.filter((f) => classifyArtifact(f) !== null);

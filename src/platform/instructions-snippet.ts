@@ -34,6 +34,25 @@ ${COMMAND_REFERENCE}
 }
 
 /**
+ * Cursor uses MDC rules, so the snippet must include valid frontmatter.
+ */
+export function generateCursorRulesSnippet(): string {
+  return `---
+description: BMAD-METHOD integration for this repository
+alwaysApply: true
+---
+
+## BMAD-METHOD Integration
+
+Ask Cursor to run the BMAD master agent to navigate phases. Read \`_bmad/COMMANDS.md\` for all available agents, workflows, and command instructions.
+
+${FULL_TIER_PHASES}
+
+${COMMAND_REFERENCE}
+`;
+}
+
+/**
  * Instructions snippet for skills-based platforms.
  * Commands are available as native skills with \`$command-name\` invocation.
  */

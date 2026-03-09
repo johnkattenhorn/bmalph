@@ -97,6 +97,37 @@ normalize_codex_jsonl_response() {
     ' "$output_file" > "$normalized_file"
 }
 
+# Normalize Cursor stream-json event output into the object shape expected downstream.
+normalize_cursor_stream_json_response() {
+    local output_file=$1
+    local normalized_file=$2
+
+    jq -rs '
+        def assistant_text($item):
+            [($item.message.content // [])[]? | select(.type == "text") | .text]
+            | join("\n");
+
+        (map(select(.type == "result")) | last // {}) as $result_event
+        | {
+            result: (
+                $result_event.result
+                // (
+                    map(select(.type == "assistant"))
+                    | map(assistant_text(.))
+                    | map(select(length > 0))
+                    | join("\n")
+                )
+            ),
+            sessionId: (
+                $result_event.session_id
+                // (map(select(.type == "system" and .subtype == "init") | .session_id // empty) | first)
+                // ""
+            ),
+            metadata: {}
+        }
+    ' "$output_file" > "$normalized_file"
+}
+
 # Detect whether a multi-document stream matches Codex JSONL events.
 is_codex_jsonl_output() {
     local output_file=$1
@@ -107,6 +138,24 @@ is_codex_jsonl_output() {
             . or (
                 $item.type == "thread.started" or
                 ($item.type == "item.completed" and ($item.item.type? != null))
+            )
+        )
+    ' < "$output_file" 2>/dev/null
+}
+
+# Detect whether a multi-document stream matches Cursor stream-json events.
+is_cursor_stream_json_output() {
+    local output_file=$1
+
+    jq -n -j '
+        reduce inputs as $item (
+            false;
+            . or (
+                $item.type == "system" or
+                $item.type == "user" or
+                $item.type == "assistant" or
+                $item.type == "tool_call" or
+                $item.type == "result"
             )
         )
     ' < "$output_file" 2>/dev/null
@@ -126,6 +175,14 @@ normalize_json_output() {
 
         if [[ "$is_codex_jsonl" == "true" ]]; then
             normalize_codex_jsonl_response "$output_file" "$normalized_file"
+            return $?
+        fi
+
+        local is_cursor_stream_json
+        is_cursor_stream_json=$(is_cursor_stream_json_output "$output_file") || return 1
+
+        if [[ "$is_cursor_stream_json" == "true" ]]; then
+            normalize_cursor_stream_json_response "$output_file" "$normalized_file"
             return $?
         fi
 
@@ -215,25 +272,45 @@ detect_output_format() {
 
         if [[ "$is_codex_jsonl" == "true" ]]; then
             echo "json"
-        else
-            echo "text"
+            return
         fi
-        return
+
+        local is_cursor_stream_json
+        is_cursor_stream_json=$(is_cursor_stream_json_output "$output_file") || {
+            echo "text"
+            return
+        }
+
+        if [[ "$is_cursor_stream_json" == "true" ]]; then
+            echo "json"
+            return
+        fi
     fi
 
     echo "text"
 }
 
+trim_shell_whitespace() {
+    local value="${1//$'\r'/}"
+
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+
+    printf '%s' "$value"
+}
+
 # Parse JSON response and extract structured fields
 # Creates .ralph/.json_parse_result with normalized analysis data
-# Supports FOUR JSON formats:
+# Supports FIVE JSON formats:
 # 1. Flat format: { status, exit_signal, work_type, files_modified, ... }
 # 2. Claude CLI object format: { result, sessionId, metadata: { files_changed, has_errors, completion_status, ... } }
 # 3. Claude CLI array format: [ {type: "system", ...}, {type: "assistant", ...}, {type: "result", ...} ]
 # 4. Codex JSONL format: {"type":"thread.started",...}\n{"type":"item.completed","item":{...}}
+# 5. Cursor stream-json format: {"type":"assistant",...}\n{"type":"result",...}
 parse_json_response() {
     local output_file=$1
     local result_file="${2:-$RALPH_DIR/.json_parse_result}"
+    local original_output_file=$output_file
     local normalized_file=""
     local json_document_count=""
     local response_shape="object"
@@ -267,7 +344,11 @@ parse_json_response() {
         output_file="$normalized_file"
 
         if [[ "$response_shape" == "jsonl" ]]; then
-            response_shape="codex_jsonl"
+            if is_codex_jsonl_output "$original_output_file" >/dev/null 2>&1; then
+                response_shape="codex_jsonl"
+            else
+                response_shape="cursor_stream_jsonl"
+            fi
         fi
     fi
 
@@ -296,7 +377,7 @@ parse_json_response() {
         if [[ -n "$result_text" ]] && echo "$result_text" | grep -q -- "---RALPH_STATUS---"; then
             # Extract EXIT_SIGNAL value from RALPH_STATUS block within result text
             local embedded_exit_sig
-            embedded_exit_sig=$(echo "$result_text" | grep "EXIT_SIGNAL:" | cut -d: -f2 | tr -d '\r' | xargs)
+            embedded_exit_sig=$(trim_shell_whitespace "$(printf '%s\n' "$result_text" | grep "EXIT_SIGNAL:" | cut -d: -f2)")
             if [[ -n "$embedded_exit_sig" ]]; then
                 # Explicit EXIT_SIGNAL found in RALPH_STATUS block
                 explicit_exit_signal_found="true"
@@ -311,7 +392,7 @@ parse_json_response() {
             # Also check STATUS field as fallback ONLY when EXIT_SIGNAL was not specified
             # This respects explicit EXIT_SIGNAL: false which means "task complete, continue working"
             local embedded_status
-            embedded_status=$(echo "$result_text" | grep "STATUS:" | cut -d: -f2 | tr -d '\r' | xargs)
+            embedded_status=$(trim_shell_whitespace "$(printf '%s\n' "$result_text" | grep "STATUS:" | cut -d: -f2)")
             if [[ "$embedded_status" == "COMPLETE" && "$explicit_exit_signal_found" != "true" ]]; then
                 # STATUS: COMPLETE without any EXIT_SIGNAL field implies completion
                 exit_signal="true"
@@ -341,7 +422,7 @@ parse_json_response() {
     local summary=$(jq -r -j '.result // .summary // ""' "$output_file" 2>/dev/null)
 
     # Session ID: from Claude CLI format (sessionId) OR from metadata.session_id
-    local session_id=$(jq -r -j '.sessionId // .metadata.session_id // ""' "$output_file" 2>/dev/null)
+    local session_id=$(jq -r -j '.sessionId // .metadata.session_id // .session_id // ""' "$output_file" 2>/dev/null)
 
     # Loop number: from metadata
     local loop_number=$(jq -r -j '.metadata.loop_number // .loop_number // 0' "$output_file" 2>/dev/null)
@@ -375,7 +456,7 @@ parse_json_response() {
     # completion markers are absent. This keeps JSONL analysis aligned with text mode.
     local summary_has_completion_keyword="false"
     local summary_has_no_work_pattern="false"
-    if [[ "$response_shape" == "codex_jsonl" && "$explicit_exit_signal_found" != "true" && -n "$summary" ]]; then
+    if [[ "$response_shape" == "codex_jsonl" || "$response_shape" == "cursor_stream_jsonl" ]] && [[ "$explicit_exit_signal_found" != "true" && -n "$summary" ]]; then
         for keyword in "${COMPLETION_KEYWORDS[@]}"; do
             if echo "$summary" | grep -qi "$keyword"; then
                 summary_has_completion_keyword="true"
@@ -639,8 +720,8 @@ analyze_response() {
     # 1. Check for explicit structured output (if Claude follows schema)
     if grep -q -- "---RALPH_STATUS---" "$output_file"; then
         # Parse structured output
-        local status=$(grep "STATUS:" "$output_file" | cut -d: -f2 | tr -d '\r' | xargs)
-        local exit_sig=$(grep "EXIT_SIGNAL:" "$output_file" | cut -d: -f2 | tr -d '\r' | xargs)
+        local status=$(trim_shell_whitespace "$(grep "STATUS:" "$output_file" | cut -d: -f2)")
+        local exit_sig=$(trim_shell_whitespace "$(grep "EXIT_SIGNAL:" "$output_file" | cut -d: -f2)")
 
         # If EXIT_SIGNAL is explicitly provided, respect it
         if [[ -n "$exit_sig" ]]; then
@@ -1093,7 +1174,9 @@ export -f detect_output_format
 export -f count_json_documents
 export -f normalize_cli_array_response
 export -f normalize_codex_jsonl_response
+export -f normalize_cursor_stream_json_response
 export -f is_codex_jsonl_output
+export -f is_cursor_stream_json_output
 export -f normalize_json_output
 export -f extract_session_id_from_output
 export -f parse_json_response

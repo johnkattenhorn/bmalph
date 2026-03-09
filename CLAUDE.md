@@ -56,9 +56,15 @@ The instructions file depends on the configured platform — see `src/platform/`
 | `bmalph reset`         | Remove all bmalph files from the project  |
 | `bmalph watch`         | _(deprecated)_ Use `bmalph run` instead   |
 
-## Slash Commands
+## Command Delivery
 
-bmalph installs 51 slash commands (45 BMAD + 6 bmalph). Key commands:
+bmalph bundles 51 BMAD and bmalph command definitions. Delivery varies by platform:
+
+- **Claude Code** — `.claude/commands/` slash commands
+- **OpenAI Codex** — `.agents/skills/` Codex Skills
+- **Cursor, Windsurf, Copilot, Aider** — `_bmad/COMMANDS.md` reference index
+
+Key commands in Claude Code syntax:
 
 | Command                 | Description                         |
 | ----------------------- | ----------------------------------- |
@@ -72,7 +78,7 @@ bmalph installs 51 slash commands (45 BMAD + 6 bmalph). Key commands:
 | `/bmalph-watch`         | Launch Ralph live dashboard         |
 | `/bmad-help`            | List all BMAD commands              |
 
-For full list, run `/bmad-help` in Claude Code.
+For the full list, run `/bmad-help` in Claude Code or inspect `_bmad/COMMANDS.md` / `.agents/skills/` for the other platforms.
 
 ### Transition to Ralph
 
@@ -130,9 +136,12 @@ Use `bmalph implement` (or `/bmalph-implement`) to transition from BMAD planning
 - `src/platform/registry.ts` — Platform registry (getPlatform, getAllPlatforms)
 - `src/platform/detect.ts` — Auto-detect platform from project markers
 - `src/platform/resolve.ts` — Resolve platform from config with fallback
+- `src/platform/doctor-checks.ts` — Shared platform doctor checks
+- `src/platform/instructions-snippet.ts` — Generated multi-platform instructions snippets
 - `src/platform/claude-code.ts` — Claude Code platform definition
 - `src/platform/codex.ts` — OpenAI Codex platform definition
 - `src/platform/cursor.ts` — Cursor platform definition
+- `src/platform/cursor-runtime-checks.ts` — Cursor bash/auth preflight checks for doctor and run
 - `src/platform/windsurf.ts` — Windsurf platform definition
 - `src/platform/copilot.ts` — GitHub Copilot platform definition
 - `src/platform/aider.ts` — Aider platform definition
@@ -141,7 +150,7 @@ Use `bmalph implement` (or `/bmalph-implement`) to transition from BMAD planning
 - `ralph/drivers/claude-code.sh` — Ralph driver for Claude Code (`claude` CLI)
 - `ralph/drivers/codex.sh` — Ralph driver for OpenAI Codex (`codex exec`)
 - `ralph/drivers/copilot.sh` — Ralph driver for GitHub Copilot (`copilot --autopilot`, experimental)
-- `ralph/drivers/cursor.sh` — Ralph driver for Cursor (`agent --print --force`, experimental)
+- `ralph/drivers/cursor.sh` — Ralph driver for Cursor (`cursor-agent -p --force --output-format json`, experimental)
 - `slash-commands/` — Slash commands (6 bmalph + 45 BMAD)
 
 ## Dev Workflow

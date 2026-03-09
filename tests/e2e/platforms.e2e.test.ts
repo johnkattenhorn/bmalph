@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runInit, runUpgrade, runDoctor } from "./helpers/cli-runner.js";
+import { setupCursorDoctorEnv } from "./helpers/cursor-runtime.js";
 import { createTestProject, type TestProject } from "./helpers/project-scaffold.js";
 import {
   expectBmalphInitializedForPlatform,
@@ -84,7 +85,9 @@ describe("multi-platform e2e", { timeout: 60000 }, () => {
       project = await createTestProject();
 
       await runInit(project.path, "test-project", "E2E test", platform.id);
-      const result = await runDoctor(project.path);
+      const doctorEnv =
+        platform.id === "cursor" ? await setupCursorDoctorEnv(project.path) : undefined;
+      const result = await runDoctor(project.path, { env: doctorEnv });
 
       expect(result.exitCode).toBe(0);
 
@@ -126,7 +129,9 @@ describe("multi-platform e2e", { timeout: 60000 }, () => {
       const upgradeResult = await runUpgrade(project.path);
       expect(upgradeResult.exitCode).toBe(0);
 
-      const doctorResult = await runDoctor(project.path);
+      const doctorEnv =
+        platform.id === "cursor" ? await setupCursorDoctorEnv(project.path) : undefined;
+      const doctorResult = await runDoctor(project.path, { env: doctorEnv });
       expect(doctorResult.exitCode).toBe(0);
       expect(doctorResult.stdout).toContain("all checks OK");
     });
@@ -185,6 +190,25 @@ describe("multi-platform e2e", { timeout: 60000 }, () => {
         join(project.path, ".ralph/.ralphrc"),
         'PLATFORM_DRIVER="${PLATFORM_DRIVER:-codex}"'
       );
+    });
+  });
+
+  describe("cursor-specific", () => {
+    it("writes a valid MDC rule without Claude slash-command guidance", async () => {
+      project = await createTestProject();
+
+      const result = await runInit(project.path, "test-project", "E2E test", "cursor");
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain("/bmalph");
+      expect(result.stdout).not.toContain("/analyst");
+
+      const content = await readFile(join(project.path, ".cursor/rules/bmad.mdc"), "utf-8");
+      expect(content).toMatch(/^---\r?\n/);
+      expect(content).toContain("alwaysApply: true");
+      expect(content).toContain("## BMAD-METHOD Integration");
+      expect(content).not.toContain("/bmalph");
+      expect(content).not.toContain("/analyst");
     });
   });
 

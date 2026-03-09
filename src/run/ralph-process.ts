@@ -7,6 +7,7 @@ import type { RalphProcess, RalphProcessState } from "./types.js";
 const RALPH_LOOP_PATH = `${RALPH_DIR}/ralph_loop.sh`;
 const BASH_RALPH_LOOP_PATH = `./${RALPH_LOOP_PATH}`;
 const BASH_VALIDATION_TIMEOUT_MS = 3000;
+const BASH_COMMAND_TIMEOUT_MS = 5000;
 const DEFAULT_WINDOWS_GIT_BASH_PATHS = [
   "C:\\Program Files\\Git\\bin\\bash.exe",
   "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
@@ -15,6 +16,12 @@ const DEFAULT_WINDOWS_GIT_BASH_PATHS = [
 ] as const;
 
 let cachedBashCommand: string | undefined;
+
+export interface BashCommandResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
 
 export async function resolveBashCommand(): Promise<string> {
   if (cachedBashCommand) {
@@ -35,6 +42,75 @@ export async function resolveBashCommand(): Promise<string> {
 
 export async function validateBashAvailable(): Promise<void> {
   await resolveBashCommand();
+}
+
+export async function runBashCommand(
+  command: string,
+  options: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+  } = {}
+): Promise<BashCommandResult> {
+  const bashCommand = await resolveBashCommand();
+  const timeoutMs = options.timeoutMs ?? BASH_COMMAND_TIMEOUT_MS;
+
+  return new Promise<BashCommandResult>((resolve, reject) => {
+    const child = spawn(bashCommand, ["-lc", command], {
+      cwd: options.cwd,
+      env: { ...process.env, ...options.env },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    const finish = (callback: () => void): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeoutId);
+      callback();
+    };
+
+    const timeoutId = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        // Ignore kill failures for already exited processes.
+      }
+
+      finish(() => reject(new Error(`bash command timed out: ${command}`)));
+    }, timeoutMs);
+
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("close", (exitCode) =>
+      finish(() =>
+        resolve({
+          exitCode,
+          stdout,
+          stderr,
+        })
+      )
+    );
+
+    child.on("error", (error) =>
+      finish(() =>
+        reject(new Error(`Failed to run bash command: ${error.message}`, { cause: error }))
+      )
+    );
+  });
 }
 
 export async function validateRalphLoop(projectDir: string): Promise<void> {

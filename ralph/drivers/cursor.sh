@@ -1,11 +1,7 @@
 #!/bin/bash
-# Cursor CLI driver for Ralph (EXPERIMENTAL)
-# Provides platform-specific CLI invocation logic for Cursor CLI.
-#
-# Known limitations:
-# - CLI is in beta — binary name and flags may change
-# - NDJSON stream format assumes {type: "text", content: "..."} events
-# - Session continuity is disabled until Cursor exposes a stable capturable session ID
+# Cursor CLI driver for Ralph
+# Uses the documented cursor-agent contract for background execution and
+# switches to stream-json only for live display paths.
 
 driver_name() {
     echo "cursor"
@@ -42,7 +38,6 @@ driver_check_available() {
     command -v "$cli_binary" &>/dev/null
 }
 
-# Cursor CLI tool names
 driver_valid_tools() {
     VALID_TOOL_PATTERNS=(
         "file_edit"
@@ -53,10 +48,6 @@ driver_valid_tools() {
     )
 }
 
-# Build Cursor CLI command
-# Context is prepended to the prompt (same pattern as Codex/Copilot drivers).
-# Uses --print for headless mode, --force for autonomous execution,
-# --output-format stream-json for NDJSON streaming.
 driver_build_command() {
     local prompt_file=$1
     local loop_context=$2
@@ -76,16 +67,12 @@ driver_build_command() {
         CLAUDE_CMD_ARGS+=("$cli_binary")
     fi
 
-    # Headless mode
-    CLAUDE_CMD_ARGS+=("--print")
+    CLAUDE_CMD_ARGS+=("-p" "--force" "--output-format" "json")
 
-    # Autonomous execution
-    CLAUDE_CMD_ARGS+=("--force")
+    if [[ "$CLAUDE_USE_CONTINUE" == "true" && -n "$session_id" ]]; then
+        CLAUDE_CMD_ARGS+=("--resume" "$session_id")
+    fi
 
-    # NDJSON streaming output
-    CLAUDE_CMD_ARGS+=("--output-format" "stream-json")
-
-    # Build prompt with context prepended
     local prompt_content
     if driver_running_on_windows; then
         prompt_content=$(driver_build_windows_bootstrap_prompt "$loop_context" "$prompt_file")
@@ -102,20 +89,43 @@ $prompt_content"
 }
 
 driver_supports_sessions() {
-    return 1  # false — session IDs are not capturable from current NDJSON output
+    return 0
 }
 
 driver_supports_live_output() {
-    return 0  # true
+    return 0
 }
 
 driver_prepare_live_command() {
-    LIVE_CMD_ARGS=("${CLAUDE_CMD_ARGS[@]}")
+    LIVE_CMD_ARGS=()
+    local skip_next=false
+
+    for arg in "${CLAUDE_CMD_ARGS[@]}"; do
+        if [[ "$skip_next" == "true" ]]; then
+            LIVE_CMD_ARGS+=("stream-json")
+            skip_next=false
+        elif [[ "$arg" == "--output-format" ]]; then
+            LIVE_CMD_ARGS+=("$arg")
+            skip_next=true
+        else
+            LIVE_CMD_ARGS+=("$arg")
+        fi
+    done
+
+    if [[ "$skip_next" == "true" ]]; then
+        return 1
+    fi
 }
 
-# Cursor CLI outputs NDJSON events
 driver_stream_filter() {
-    echo 'select(.type == "text") | .content // empty'
+    echo '
+        if .type == "assistant" then
+            [(.message.content[]? | select(.type == "text") | .text)] | join("\n")
+        elif .type == "tool_call" then
+            "\n\n⚡ [" + (.tool_call.name // .name // "tool_call") + "]\n"
+        else
+            empty
+        end'
 }
 
 driver_running_on_windows() {
@@ -208,10 +218,18 @@ driver_localappdata_cli_binary() {
         local_app_data=$(cygpath -u "$local_app_data")
     fi
 
-    local candidate="$local_app_data/cursor-agent/agent.cmd"
-    if [[ -f "$candidate" ]]; then
-        echo "$candidate"
-    fi
+    local candidates=(
+        "$local_app_data/cursor-agent/cursor-agent.cmd"
+        "$local_app_data/cursor-agent/agent.cmd"
+    )
+
+    local candidate
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
 }
 
 driver_wrapper_path() {

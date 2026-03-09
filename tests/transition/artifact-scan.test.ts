@@ -288,6 +288,20 @@ describe("artifact-scan", () => {
       expect(suggestNext(phases, 3)).toContain("/architect");
     });
 
+    it("uses Cursor-specific master-agent guidance instead of slash commands", () => {
+      const phases = {
+        1: [],
+        2: [{ phase: 2, name: "PRD", required: true, filename: "prd.md" }],
+        3: [],
+      };
+
+      const suggestion = suggestNext(phases, 3, "cursor");
+
+      expect(suggestion).toContain("_bmad/COMMANDS.md");
+      expect(suggestion).toContain("run the BMAD master agent");
+      expect(suggestion).not.toContain("/architect");
+    });
+
     it("suggests create epics when architecture exists but no stories", () => {
       const phases = {
         1: [],

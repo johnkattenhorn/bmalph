@@ -97,4 +97,15 @@ describe("full-tier experimental platforms", () => {
       });
     }
   });
+
+  describe("Cursor MDC rule", () => {
+    it("starts with MDC frontmatter and is always applied", () => {
+      const snippet = cursorPlatform.generateInstructionsSnippet();
+
+      expect(snippet.startsWith("---\n")).toBe(true);
+      expect(snippet).toContain("description:");
+      expect(snippet).toContain("alwaysApply: true");
+      expect(snippet).toContain("## BMAD-METHOD Integration");
+    });
+  });
 });

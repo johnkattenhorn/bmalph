@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { resolveBashCommand } from "../run/ralph-process.js";
+import { resolveBashCommand, runBashCommand } from "../run/ralph-process.js";
 import { readJsonFile } from "../utils/json.js";
 import { isEnoent, formatError } from "../utils/errors.js";
 import { CONFIG_FILE } from "../utils/constants.js";
@@ -47,12 +47,13 @@ export async function checkBash(_projectDir: string): Promise<CheckResult> {
   }
 }
 
-export async function checkJq(_projectDir: string): Promise<CheckResult> {
-  const available = await checkCommandAvailable("jq");
+export async function checkJq(projectDir: string): Promise<CheckResult> {
+  const result = await runBashCommand("command -v jq", { cwd: projectDir });
+  const available = result.exitCode === 0;
   return {
     label: "jq available",
     passed: available,
-    detail: available ? undefined : "jq not found in PATH",
+    detail: available ? undefined : "jq not found in bash PATH",
     hint: available
       ? undefined
       : process.platform === "win32"

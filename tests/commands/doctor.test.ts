@@ -38,7 +38,7 @@ vi.mock("../../src/utils/github.js", async (importOriginal) => {
   };
 });
 
-describe("doctor command", () => {
+describe("doctor command", { timeout: 15000 }, () => {
   let testDir: string;
   let consoleSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -1072,6 +1072,8 @@ describe("doctor command", () => {
       const ids = checks.map((c) => c.id);
 
       expect(ids).toContain("instructions-file");
+      expect(ids).toContain("cursor-agent-available");
+      expect(ids).toContain("cursor-agent-auth");
       expect(ids).not.toContain("slash-command");
       expect(ids).not.toContain("claude-md");
     });

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+coverage*/
 *.tsbuildinfo
 *.tgz
 *.log
@@ -12,3 +13,20 @@ Thumbs.db
 # Bats test helpers (installed via scripts/setup-bats.sh or CI)
 tests/bash/test_helper/bats-support/
 tests/bash/test_helper/bats-assert/
+
+# Local workspace files
+AGENTS.md
+scripts/sync-instructions.mjs
+tests/scripts/sync-instructions.test.ts
+.ralph/logs/
+_bmad-output/
+
+# Local generated workspace artifacts
+.claude/skills/
+.claude/scheduled_tasks.lock
+.cursor/
+.ralph/
+.ralphrc
+_bmad/
+bmalph/
+.tmp-*

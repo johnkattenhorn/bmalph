@@ -98,8 +98,11 @@ export async function runUpgradeDryRun(cwd: string): Promise<CliResult> {
 /**
  * Run doctor command
  */
-export async function runDoctor(cwd: string): Promise<CliResult> {
-  return runCli(["doctor"], { cwd });
+export async function runDoctor(
+  cwd: string,
+  options: Omit<CliOptions, "cwd"> = {}
+): Promise<CliResult> {
+  return runCli(["doctor"], { cwd, ...options });
 }
 
 /**

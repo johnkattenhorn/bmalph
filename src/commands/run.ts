@@ -2,6 +2,7 @@ import chalk from "chalk";
 import { readConfig } from "../utils/config.js";
 import { withErrorHandling } from "../utils/errors.js";
 import { isPlatformId, getPlatform, getFullTierPlatformNames } from "../platform/registry.js";
+import { validateCursorRuntime } from "../platform/cursor-runtime-checks.js";
 import { validateBashAvailable, validateRalphLoop, spawnRalphLoop } from "../run/ralph-process.js";
 import { startRunDashboard } from "../run/run-dashboard.js";
 import { parseInterval } from "../utils/validate.js";
@@ -41,6 +42,9 @@ async function executeRun(options: RunCommandOptions): Promise<void> {
   const interval = parseInterval(options.interval);
 
   await Promise.all([validateBashAvailable(), validateRalphLoop(projectDir)]);
+  if (platform.id === "cursor") {
+    await validateCursorRuntime(projectDir);
+  }
 
   const ralph = spawnRalphLoop(projectDir, platform.id, {
     inheritStdio: !dashboard,

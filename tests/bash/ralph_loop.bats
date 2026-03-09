@@ -360,6 +360,17 @@ EOF
     assert_equal "$saved" "codex-thread-123"
 }
 
+@test "save_claude_session extracts session ID from Cursor JSON output" {
+    local output_file="$RALPH_DIR/test_output.json"
+    cp "$FIXTURES_DIR/cursor_json_response.json" "$output_file"
+
+    save_claude_session "$output_file"
+
+    local saved
+    saved=$(cat "$CLAUDE_SESSION_FILE")
+    assert_equal "$saved" "cursor-session-123"
+}
+
 @test "save_claude_session does nothing when output file missing" {
     rm -f "$CLAUDE_SESSION_FILE"
     save_claude_session "$RALPH_DIR/nonexistent.json"
@@ -660,7 +671,7 @@ PLAN
     assert_output "true"
 }
 
-@test "execute_claude_code: unsupported session drivers do not pass resume IDs" {
+@test "execute_claude_code: cursor driver resumes saved sessions" {
     _skip_if_xargs_broken
     echo "0" > "$CALL_COUNT_FILE"
     echo '{"test_only_loops": [], "done_signals": [], "completion_indicators": []}' > "$EXIT_SIGNALS_FILE"
@@ -671,7 +682,7 @@ PLAN
 #!/usr/bin/env bash
 printf '%s\n' "$*" > "$RALPH_DIR/cursor_args.log"
 cat <<'OUT'
-{"type":"text","content":"Still working on the auth module."}
+{"result":"Completed the auth module updates.\n\n---RALPH_STATUS---\nSTATUS: COMPLETE\nEXIT_SIGNAL: true\n---END_RALPH_STATUS---","session_id":"cursor-session-123"}
 OUT
 exit 0
 EOF
@@ -694,7 +705,8 @@ EOF
     assert_success
 
     run grep -- "--resume" "$RALPH_DIR/cursor_args.log"
-    assert_failure
+    assert_success
+    assert_output --partial "stale-session-123"
 }
 
 @test "prepare_live_command_args converts Claude JSON mode into stream-json" {
@@ -734,6 +746,24 @@ EOF
     run get_live_stream_filter
     assert_success
     assert_output --partial "item.completed"
+}
+
+@test "prepare_live_command_args converts Cursor JSON mode into stream-json" {
+    echo "Implement auth" > "$RALPH_DIR/PROMPT.md"
+    PROMPT_FILE="$RALPH_DIR/PROMPT.md"
+
+    SCRIPT_DIR="$PROJECT_ROOT/ralph"
+    PLATFORM_DRIVER="cursor"
+    load_platform_driver
+    build_claude_command "$PROMPT_FILE" "" ""
+
+    prepare_live_command_args
+    local args_str="${LIVE_CMD_ARGS[*]}"
+    [[ "$args_str" =~ "--output-format stream-json" ]]
+
+    run get_live_stream_filter
+    assert_success
+    assert_output --partial '.type == "assistant"'
 }
 
 @test "supports_live_output rejects drivers without structured streams" {

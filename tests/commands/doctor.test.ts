@@ -91,14 +91,13 @@ describe("doctor command", () => {
 
   describe("Node version check", () => {
     it("passes when Node version is >= 20", async () => {
-      await setupFullProject();
-      const { doctorCommand } = await import("../../src/commands/doctor.js");
-      await doctorCommand({ projectDir: testDir });
+      const { checkNodeVersion } = await import("../../src/commands/doctor-checks.js");
 
-      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
-      expect(output).toContain("Node version >= 20");
-      // Should show check mark (or just pass without showing fail detail)
-      expect(output).not.toContain("got v");
+      const result = await checkNodeVersion(testDir);
+
+      expect(result.label).toBe("Node version >= 20");
+      expect(result.passed).toBe(true);
+      expect(result.detail).toBe(`v${process.versions.node}`);
     });
   });
 

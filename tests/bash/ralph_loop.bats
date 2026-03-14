@@ -37,8 +37,8 @@ setup() {
     MAX_CALLS_PER_HOUR=100
     CLAUDE_TIMEOUT_MINUTES=15
     CLAUDE_OUTPUT_FORMAT="json"
-    CLAUDE_ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,NotebookEdit,Bash"
-    CLAUDE_PERMISSION_MODE="auto"
+    CLAUDE_ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,EnterPlanMode,ExitPlanMode,NotebookEdit,Bash"
+    CLAUDE_PERMISSION_MODE="bypassPermissions"
     CLAUDE_USE_CONTINUE="true"
     CLAUDE_SESSION_EXPIRY_HOURS=24
     PERMISSION_DENIAL_MODE="continue"
@@ -125,10 +125,10 @@ teardown() {
     assert_equal "$CLAUDE_PERMISSION_MODE" "dontAsk"
 }
 
-@test "load_ralphrc normalizes blank Claude permission mode to auto" {
+@test "load_ralphrc normalizes blank Claude permission mode to bypassPermissions" {
     echo 'CLAUDE_PERMISSION_MODE=""' > "$RALPHRC_FILE"
     load_ralphrc
-    assert_equal "$CLAUDE_PERMISSION_MODE" "auto"
+    assert_equal "$CLAUDE_PERMISSION_MODE" "bypassPermissions"
 }
 
 @test "load_ralphrc: env vars take precedence over .ralphrc" {
@@ -212,7 +212,7 @@ teardown() {
     [[ "$CLAUDE_PERMISSION_MODE" == "dontAsk" ]]
 }
 
-@test "load_ralphrc: explicit empty CLAUDE_PERMISSION_MODE env override resets to auto at startup" {
+@test "load_ralphrc: explicit empty CLAUDE_PERMISSION_MODE env override resets to bypassPermissions at startup" {
     local isolated_ralph_dir
     isolated_ralph_dir="$(mktemp -d)"
     printf 'CLAUDE_PERMISSION_MODE="plan"\n' > "$isolated_ralph_dir/.ralphrc"
@@ -228,7 +228,7 @@ teardown() {
 
     rm -rf "$isolated_ralph_dir"
 
-    [[ "$status" -eq 0 && "$output" == "auto" ]]
+    [[ "$status" -eq 0 && "$output" == "bypassPermissions" ]]
 }
 
 @test "load_ralphrc: unset CLAUDE_PERMISSION_MODE env leaves config in place at startup" {
@@ -465,6 +465,11 @@ teardown() {
 
 @test "validate_allowed_tools accepts AskUserQuestion for Claude opt-in configs" {
     run validate_allowed_tools "Write,AskUserQuestion,Bash(node --version)"
+    assert_success
+}
+
+@test "validate_allowed_tools accepts EnterPlanMode and ExitPlanMode for autonomous safety nets" {
+    run validate_allowed_tools "Write,EnterPlanMode,ExitPlanMode,Bash(node --version)"
     assert_success
 }
 

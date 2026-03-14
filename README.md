@@ -394,7 +394,7 @@ The instructions file and command directory depend on the configured platform. S
 
 Ralph is a bash loop that spawns fresh AI coding sessions using a **platform driver** matching the configured platform:
 
-- **Claude Code driver** — invokes `claude` with `--output-format json`, `--permission-mode auto`, `--allowedTools`, and explicit `--resume <session_id>`
+- **Claude Code driver** — invokes `claude` with `--output-format json`, `--permission-mode bypassPermissions`, `--allowedTools`, and explicit `--resume <session_id>`
 - **Codex driver** — invokes `codex exec --json --sandbox workspace-write` with explicit `--resume <session_id>`
 - **Copilot driver** _(experimental)_ — invokes `copilot --autopilot --yolo` with plain-text output
 - **Cursor driver** _(experimental)_ — invokes `cursor-agent -p --force --output-format json`, persists `session_id` for `--resume`, and switches to `stream-json` only for live output
@@ -449,10 +449,10 @@ If you get permission errors:
 ```bash
 # Claude Code only: broaden the tool allowlist in the managed config
 # .ralph/.ralphrc
-ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,NotebookEdit,Bash"
+ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,EnterPlanMode,ExitPlanMode,NotebookEdit,Bash"
 
 # Keep interactive approval workflows out of unattended Claude loops
-CLAUDE_PERMISSION_MODE="auto"
+CLAUDE_PERMISSION_MODE="bypassPermissions"
 
 # Keep the loop unattended by continuing after detected denials
 PERMISSION_DENIAL_MODE="continue"
@@ -465,7 +465,7 @@ bmalph run
 Notes:
 
 - `ALLOWED_TOOLS` only applies to the Claude Code driver and controls normal tool access.
-- `CLAUDE_PERMISSION_MODE="auto"` prevents interactive approval modes like plan approval from blocking unattended Claude loops.
+- `CLAUDE_PERMISSION_MODE="bypassPermissions"` keeps unattended Claude loops out of interactive approval flows without relying on the unsupported `afk-mode` beta header.
 - Codex, Cursor, and Copilot use their native sandbox/approval settings instead.
 - Fresh installs default to unattended mode and discourage in-loop user questions via `.ralph/PROMPT.md`.
 

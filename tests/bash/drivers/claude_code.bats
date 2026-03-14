@@ -47,6 +47,8 @@ teardown() {
     [[ " ${VALID_TOOL_PATTERNS[*]} " =~ " Write " ]]
     [[ " ${VALID_TOOL_PATTERNS[*]} " =~ " Read " ]]
     [[ " ${VALID_TOOL_PATTERNS[*]} " =~ " Edit " ]]
+    [[ " ${VALID_TOOL_PATTERNS[*]} " =~ " EnterPlanMode " ]]
+    [[ " ${VALID_TOOL_PATTERNS[*]} " =~ " ExitPlanMode " ]]
     [[ " ${VALID_TOOL_PATTERNS[*]} " =~ " Bash " ]]
     [[ " ${VALID_TOOL_PATTERNS[*]} " =~ " Grep " ]]
     [[ " ${VALID_TOOL_PATTERNS[*]} " =~ " Glob " ]]
@@ -72,7 +74,7 @@ teardown() {
     run driver_permission_denial_help
 
     assert_success
-    assert_output --partial "CLAUDE_PERMISSION_MODE=auto"
+    assert_output --partial "CLAUDE_PERMISSION_MODE=bypassPermissions"
     assert_output --partial "ALLOWED_TOOLS"
     assert_output --partial "will not fix it"
     assert_output --partial "--reset-session"
@@ -115,7 +117,7 @@ teardown() {
     [[ "$args_str" =~ "--output-format json" ]]
 }
 
-@test "driver_build_command defaults permission mode to auto" {
+@test "driver_build_command defaults permission mode to bypassPermissions" {
     local prompt_file="$RALPH_DIR/prompt.md"
     echo "Test prompt" > "$prompt_file"
 
@@ -127,7 +129,7 @@ teardown() {
     driver_build_command "$prompt_file" "" ""
 
     local args_str="${CLAUDE_CMD_ARGS[*]}"
-    [[ "$args_str" =~ "--permission-mode auto" ]]
+    [[ "$args_str" =~ "--permission-mode bypassPermissions" ]]
 }
 
 @test "driver_build_command passes configured permission mode" {

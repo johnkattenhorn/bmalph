@@ -73,13 +73,13 @@ _env_CB_AUTO_RESET="${CB_AUTO_RESET:-}"
 MAX_CALLS_PER_HOUR="${MAX_CALLS_PER_HOUR:-100}"
 VERBOSE_PROGRESS="${VERBOSE_PROGRESS:-false}"
 CLAUDE_TIMEOUT_MINUTES="${CLAUDE_TIMEOUT_MINUTES:-15}"
-DEFAULT_CLAUDE_ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,NotebookEdit,Bash"
+DEFAULT_CLAUDE_ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,EnterPlanMode,ExitPlanMode,NotebookEdit,Bash"
 DEFAULT_PERMISSION_DENIAL_MODE="continue"
 
 # Modern Claude CLI configuration (Phase 1.1)
 CLAUDE_OUTPUT_FORMAT="${CLAUDE_OUTPUT_FORMAT:-json}"
 CLAUDE_ALLOWED_TOOLS="${CLAUDE_ALLOWED_TOOLS:-$DEFAULT_CLAUDE_ALLOWED_TOOLS}"
-CLAUDE_PERMISSION_MODE="${CLAUDE_PERMISSION_MODE:-auto}"
+CLAUDE_PERMISSION_MODE="${CLAUDE_PERMISSION_MODE:-bypassPermissions}"
 CLAUDE_USE_CONTINUE="${CLAUDE_USE_CONTINUE:-true}"
 PERMISSION_DENIAL_MODE="${PERMISSION_DENIAL_MODE:-$DEFAULT_PERMISSION_DENIAL_MODE}"
 CLAUDE_SESSION_FILE="$RALPH_DIR/.claude_session_id" # Session ID persistence file
@@ -108,6 +108,8 @@ VALID_TOOL_PATTERNS=(
     "WebFetch"
     "WebSearch"
     "AskUserQuestion"
+    "EnterPlanMode"
+    "ExitPlanMode"
     "Bash"
     "Bash(git *)"
     "Bash(npm *)"
@@ -249,7 +251,7 @@ driver_supports_tool_allowlist() {
 driver_permission_denial_help() {
     echo "  - Review the active driver's permission or approval settings."
     echo "  - ALLOWED_TOOLS in $RALPHRC_FILE only applies to the Claude Code driver."
-    echo "  - Keep CLAUDE_PERMISSION_MODE=auto for unattended Claude Code loops."
+    echo "  - Keep CLAUDE_PERMISSION_MODE=bypassPermissions for unattended Claude Code loops."
     echo "  - After updating permissions, reset the session and restart the loop."
 }
 
@@ -530,7 +532,7 @@ validate_permission_denial_mode() {
 
 normalize_claude_permission_mode() {
     if [[ -z "${CLAUDE_PERMISSION_MODE:-}" ]]; then
-        CLAUDE_PERMISSION_MODE="auto"
+        CLAUDE_PERMISSION_MODE="bypassPermissions"
     fi
 }
 

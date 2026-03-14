@@ -9,7 +9,16 @@ const TEMPLATE_PLACEHOLDERS: Record<string, string> = {
 };
 
 const RALPHRC_TEMPLATE_NAME = "RALPHRC";
-const CLAUDE_PERMISSION_MODE_TEMPLATE_BLOCK = `# Permission mode for Claude Code CLI (default: auto)
+const CLAUDE_ALLOWED_TOOLS_TEMPLATE_LINE =
+  'ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,EnterPlanMode,ExitPlanMode,NotebookEdit,Bash"';
+const PREVIOUS_CLAUDE_ALLOWED_TOOLS_TEMPLATE_LINE =
+  'ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,NotebookEdit,Bash"';
+const CLAUDE_PERMISSION_MODE_TEMPLATE_BLOCK = `# Permission mode for Claude Code CLI (default: bypassPermissions)
+# Options: auto, acceptEdits, bypassPermissions, default, dontAsk, plan
+CLAUDE_PERMISSION_MODE="bypassPermissions"
+
+`;
+const PREVIOUS_CLAUDE_PERMISSION_MODE_TEMPLATE_BLOCK = `# Permission mode for Claude Code CLI (default: auto)
 # Options: auto, acceptEdits, bypassPermissions, default, dontAsk, plan
 CLAUDE_PERMISSION_MODE="auto"
 
@@ -150,11 +159,25 @@ async function isRalphrcCustomized(filePath: string, platformId: string): Promis
     return false;
   }
 
-  const previousManagedTemplate = currentTemplate.replace(
+  const previousManagedWithoutPermissionModeTemplate = currentTemplate
+    .replace(CLAUDE_ALLOWED_TOOLS_TEMPLATE_LINE, PREVIOUS_CLAUDE_ALLOWED_TOOLS_TEMPLATE_LINE)
+    .replace(CLAUDE_PERMISSION_MODE_TEMPLATE_BLOCK, "");
+  if (content === previousManagedWithoutPermissionModeTemplate) {
+    return false;
+  }
+
+  const previousDefaultModeTemplate = currentTemplate
+    .replace(CLAUDE_ALLOWED_TOOLS_TEMPLATE_LINE, PREVIOUS_CLAUDE_ALLOWED_TOOLS_TEMPLATE_LINE)
+    .replace(CLAUDE_PERMISSION_MODE_TEMPLATE_BLOCK, PREVIOUS_CLAUDE_PERMISSION_MODE_TEMPLATE_BLOCK);
+  if (content === previousDefaultModeTemplate) {
+    return false;
+  }
+
+  const previousPermissionModeManagedTemplate = currentTemplate.replace(
     CLAUDE_PERMISSION_MODE_TEMPLATE_BLOCK,
-    ""
+    PREVIOUS_CLAUDE_PERMISSION_MODE_TEMPLATE_BLOCK
   );
-  if (content === previousManagedTemplate) {
+  if (content === previousPermissionModeManagedTemplate) {
     return false;
   }
 

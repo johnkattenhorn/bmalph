@@ -43,11 +43,11 @@ CLAUDE_OUTPUT_FORMAT="json"
 # Comma-separated list of allowed tools for Claude Code only.
 # Ignored by the codex, cursor, and copilot drivers.
 # Opt in to interactive pauses by adding AskUserQuestion manually.
-ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,NotebookEdit,Bash"
+ALLOWED_TOOLS="Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,EnterPlanMode,ExitPlanMode,NotebookEdit,Bash"
 
-# Permission mode for Claude Code CLI (default: auto)
+# Permission mode for Claude Code CLI (default: bypassPermissions)
 # Options: auto, acceptEdits, bypassPermissions, default, dontAsk, plan
-CLAUDE_PERMISSION_MODE="auto"
+CLAUDE_PERMISSION_MODE="bypassPermissions"
 
 # How Ralph responds when a driver reports permission denials:
 # - continue: log the denial and keep looping (default for unattended mode)

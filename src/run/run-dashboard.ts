@@ -1,6 +1,7 @@
 import { createRefreshCallback } from "../watch/dashboard.js";
 import { createTerminalFrameWriter } from "../watch/frame-writer.js";
 import { FileWatcher } from "../watch/file-watcher.js";
+import { renderFooterLine } from "../watch/renderer.js";
 import type { RalphProcess } from "./types.js";
 
 export interface RunDashboardOptions {
@@ -29,13 +30,11 @@ export async function startRunDashboard(options: RunDashboardOptions): Promise<v
   const { projectDir, interval, ralph } = options;
 
   const frameWriter = createTerminalFrameWriter();
-  let statusBarText = renderStatusBar(ralph);
   let showingPrompt = false;
   let stopped = false;
-
-  const decorateFrame = (frame: string): string => {
-    const bar = showingPrompt ? renderQuitPrompt() : statusBarText;
-    return `${frame}\n${bar}`;
+  const footerRenderer = (lastUpdated: Date, cols: number): string => {
+    const leftText = showingPrompt ? renderQuitPrompt() : renderStatusBar(ralph);
+    return renderFooterLine(leftText, `Updated: ${lastUpdated.toISOString().slice(11, 19)}`, cols);
   };
 
   const refresh = createRefreshCallback(
@@ -46,7 +45,7 @@ export async function startRunDashboard(options: RunDashboardOptions): Promise<v
       }
       frameWriter.write(frame);
     },
-    { decorateFrame }
+    { footerRenderer }
   );
   const watcher = new FileWatcher(refresh, interval);
 
@@ -54,7 +53,6 @@ export async function startRunDashboard(options: RunDashboardOptions): Promise<v
     if (stopped) {
       return;
     }
-    statusBarText = renderStatusBar(ralph);
     void refresh();
   });
 

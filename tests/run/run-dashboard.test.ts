@@ -154,7 +154,7 @@ describe("startRunDashboard", () => {
     await resolveViaTick(promise);
   });
 
-  it("passes a decorator that appends the status bar to the dashboard frame", async () => {
+  it("passes a custom footer renderer to the dashboard refresh callback", async () => {
     const ralph = createMockRalphProcess();
 
     const { startRunDashboard } = await import("../../src/run/run-dashboard.js");
@@ -164,14 +164,18 @@ describe("startRunDashboard", () => {
       "/project",
       expect.any(Function),
       expect.objectContaining({
-        decorateFrame: expect.any(Function),
+        footerRenderer: expect.any(Function),
       })
     );
 
     const options = mockCreateRefreshCallback.mock.calls[0]![2] as {
-      decorateFrame: (frame: string) => string;
+      footerRenderer: (lastUpdated: Date, cols: number) => string;
     };
-    expect(options.decorateFrame("dashboard")).toContain("Ralph: running");
+    expect(options).not.toHaveProperty("decorateFrame");
+    expect(options.footerRenderer(new Date("2026-02-25T14:25:15Z"), 80)).toContain(
+      "Ralph: running"
+    );
+    expect(options.footerRenderer(new Date("2026-02-25T14:25:15Z"), 80)).toContain("Updated:");
 
     triggerExit(ralph, 0);
     await resolveViaTick(promise);

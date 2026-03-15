@@ -1,11 +1,12 @@
 import { readDashboardState } from "./state-reader.js";
 import { renderDashboard } from "./renderer.js";
+import type { FooterRenderer } from "./renderer.js";
 import { createTerminalFrameWriter } from "./frame-writer.js";
 import { FileWatcher } from "./file-watcher.js";
 import type { WatchOptions } from "./types.js";
 
 export interface RefreshCallbackOptions {
-  decorateFrame?: (frame: string) => string;
+  footerRenderer?: FooterRenderer;
   now?: () => Date;
 }
 
@@ -17,6 +18,9 @@ export function createRefreshCallback(
   const now = options.now ?? (() => new Date());
   let lastMeaningfulUpdate: Date | undefined;
   let lastRenderedBody: string | undefined;
+  const renderOptions = options.footerRenderer
+    ? { footerRenderer: options.footerRenderer }
+    : undefined;
 
   return async (): Promise<void> => {
     const state = await readDashboardState(projectDir);
@@ -24,23 +28,41 @@ export function createRefreshCallback(
       lastMeaningfulUpdate = now();
     }
 
-    let body = renderDashboard({
-      ...state,
-      lastUpdated: lastMeaningfulUpdate,
-    });
+    let frame = renderDashboard(
+      {
+        ...state,
+        lastUpdated: lastMeaningfulUpdate,
+      },
+      undefined,
+      renderOptions
+    );
+    let body = stripFooterLine(frame);
 
     if (lastRenderedBody !== undefined && body !== lastRenderedBody) {
       lastMeaningfulUpdate = now();
-      body = renderDashboard({
-        ...state,
-        lastUpdated: lastMeaningfulUpdate,
-      });
+      frame = renderDashboard(
+        {
+          ...state,
+          lastUpdated: lastMeaningfulUpdate,
+        },
+        undefined,
+        renderOptions
+      );
+      body = stripFooterLine(frame);
     }
 
     lastRenderedBody = body;
-    const frame = options.decorateFrame ? options.decorateFrame(body) : body;
     write(frame);
   };
+}
+
+function stripFooterLine(frame: string): string {
+  const footerIndex = frame.lastIndexOf("\n");
+  if (footerIndex === -1) {
+    return frame;
+  }
+
+  return frame.slice(0, footerIndex);
 }
 
 export async function startDashboard(options: WatchOptions): Promise<void> {

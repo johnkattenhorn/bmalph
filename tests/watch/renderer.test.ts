@@ -23,6 +23,7 @@ import {
   renderLogsPanel,
   renderLiveLogPanel,
   renderFooter,
+  renderFooterLine,
   renderSideBySide,
   progressBar,
   formatSessionAge,
@@ -56,6 +57,11 @@ function makeState(overrides: Partial<DashboardState> = {}): DashboardState {
     lastUpdated: new Date("2026-02-25T14:25:15Z"),
     ...overrides,
   };
+}
+
+function renderRunFooter(leftText: string): (lastUpdated: Date, cols: number) => string {
+  return (lastUpdated, cols) =>
+    renderFooterLine(leftText, `Updated: ${lastUpdated.toISOString().slice(11, 19)}`, cols);
 }
 
 describe("renderer", () => {
@@ -108,6 +114,22 @@ describe("renderer", () => {
 
       expect(output).toContain("q quit");
       expect(output).toContain("14:25:15");
+    });
+
+    it("uses a custom footer renderer instead of the default watch footer", () => {
+      const loop: LoopInfo = {
+        loopCount: 1,
+        status: "running",
+        lastAction: "building",
+        callsMadeThisHour: 5,
+        maxCallsPerHour: 100,
+      };
+      const output = renderDashboard(makeState({ loop }), COLS, {
+        footerRenderer: renderRunFooter("Ralph: running (PID 12345) | q: stop/detach"),
+      });
+
+      expect(output).toContain("Ralph: running (PID 12345) | q: stop/detach");
+      expect(output).not.toContain("q quit");
     });
 
     it("handles partial state with only loop info present", () => {
@@ -189,6 +211,50 @@ describe("renderer", () => {
 
       for (const line of output.split("\n")) {
         expect(line.length).toBeLessThanOrEqual(40);
+      }
+    });
+
+    it("keeps the running footer within the available terminal columns", () => {
+      const output = renderDashboard(
+        makeState({
+          loop: {
+            loopCount: 8,
+            status: "running",
+            lastAction: "building",
+            callsMadeThisHour: 12,
+            maxCallsPerHour: 100,
+          },
+        }),
+        32,
+        {
+          footerRenderer: renderRunFooter("Ralph: running (PID 12345) | q: stop/detach"),
+        }
+      );
+
+      for (const line of output.split("\n")) {
+        expect(displayWidth(line)).toBeLessThanOrEqual(32);
+      }
+    });
+
+    it("keeps the quit prompt footer within the available terminal columns", () => {
+      const output = renderDashboard(
+        makeState({
+          loop: {
+            loopCount: 8,
+            status: "running",
+            lastAction: "building",
+            callsMadeThisHour: 12,
+            maxCallsPerHour: 100,
+          },
+        }),
+        32,
+        {
+          footerRenderer: renderRunFooter("Stop (s) | Detach (d) | Cancel (c)"),
+        }
+      );
+
+      for (const line of output.split("\n")) {
+        expect(displayWidth(line)).toBeLessThanOrEqual(32);
       }
     });
 

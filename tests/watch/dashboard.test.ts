@@ -18,7 +18,13 @@ import { createRefreshCallback, startDashboard } from "../../src/watch/dashboard
 const mockReadState = vi.mocked(readDashboardState);
 const mockRenderDashboard = vi.mocked(renderDashboard);
 
-function renderVisibleBody(state: DashboardState): string {
+function renderVisibleFrame(
+  state: DashboardState,
+  _cols?: number,
+  options?: {
+    footerRenderer?: (lastUpdated: Date, cols: number) => string;
+  }
+): string {
   const sections = [
     state.loop
       ? `loop:${state.loop.loopCount}:${state.loop.status}:${state.loop.lastAction}`
@@ -32,7 +38,11 @@ function renderVisibleBody(state: DashboardState): string {
     state.recentLogs.map((entry) => `${entry.level}:${entry.message}`).join("|"),
     `updated:${state.lastUpdated.toISOString()}`,
   ];
-  return sections.join(" | ");
+  const footer = options?.footerRenderer
+    ? options.footerRenderer(state.lastUpdated, 80)
+    : `watch-footer:${state.lastUpdated.toISOString()}`;
+
+  return `${sections.join(" | ")}\n${footer}`;
 }
 
 function makeEmptyState(): DashboardState {
@@ -62,7 +72,7 @@ describe("createRefreshCallback", () => {
   it("reads state and renders dashboard", async () => {
     const state = makeEmptyState();
     mockReadState.mockResolvedValue(state);
-    mockRenderDashboard.mockImplementation(renderVisibleBody);
+    mockRenderDashboard.mockImplementation(renderVisibleFrame);
     const now = new Date("2026-02-25T15:00:00Z");
 
     const writeSpy = vi.fn();
@@ -72,17 +82,21 @@ describe("createRefreshCallback", () => {
     await refresh();
 
     expect(mockReadState).toHaveBeenCalledWith("/test/project");
-    expect(mockRenderDashboard).toHaveBeenLastCalledWith({
-      ...state,
-      lastUpdated: now,
-    });
+    expect(mockRenderDashboard).toHaveBeenLastCalledWith(
+      {
+        ...state,
+        lastUpdated: now,
+      },
+      undefined,
+      undefined
+    );
     expect(writeSpy).toHaveBeenCalledOnce();
     expect(writeSpy.mock.calls[0]![0]).toContain(`updated:${now.toISOString()}`);
   });
 
   it("reuses the last meaningful update when state is unchanged", async () => {
     mockReadState.mockResolvedValue(makeEmptyState());
-    mockRenderDashboard.mockImplementation(renderVisibleBody);
+    mockRenderDashboard.mockImplementation(renderVisibleFrame);
     const timestamps = [new Date("2026-02-25T15:00:00Z"), new Date("2026-02-25T15:01:00Z")];
 
     const writeSpy = vi.fn();
@@ -113,7 +127,7 @@ describe("createRefreshCallback", () => {
     };
 
     mockReadState.mockResolvedValueOnce(firstState).mockResolvedValueOnce(secondState);
-    mockRenderDashboard.mockImplementation(renderVisibleBody);
+    mockRenderDashboard.mockImplementation(renderVisibleFrame);
     const timestamps = [new Date("2026-02-25T15:00:00Z"), new Date("2026-02-25T15:01:00Z")];
 
     const writeSpy = vi.fn();
@@ -152,7 +166,7 @@ describe("createRefreshCallback", () => {
     };
 
     mockReadState.mockResolvedValueOnce(firstState).mockResolvedValueOnce(secondState);
-    mockRenderDashboard.mockImplementation(renderVisibleBody);
+    mockRenderDashboard.mockImplementation(renderVisibleFrame);
     const timestamps = [new Date("2026-02-25T15:00:00Z"), new Date("2026-02-25T15:01:00Z")];
 
     const writeSpy = vi.fn();
@@ -183,7 +197,7 @@ describe("createRefreshCallback", () => {
     };
 
     mockReadState.mockResolvedValueOnce(firstState).mockResolvedValueOnce(secondState);
-    mockRenderDashboard.mockImplementation(renderVisibleBody);
+    mockRenderDashboard.mockImplementation(renderVisibleFrame);
     const timestamps = [new Date("2026-02-25T15:00:00Z"), new Date("2026-02-25T15:01:00Z")];
 
     const refresh = createRefreshCallback("/test/project", vi.fn(), {
@@ -212,7 +226,7 @@ describe("createRefreshCallback", () => {
     };
 
     mockReadState.mockResolvedValueOnce(firstState).mockResolvedValueOnce(secondState);
-    mockRenderDashboard.mockImplementation(renderVisibleBody);
+    mockRenderDashboard.mockImplementation(renderVisibleFrame);
     const timestamps = [new Date("2026-02-25T15:00:00Z"), new Date("2026-02-25T15:01:00Z")];
 
     const refresh = createRefreshCallback("/test/project", vi.fn(), {
@@ -226,15 +240,15 @@ describe("createRefreshCallback", () => {
     expect(secondTimestamp).toEqual(firstTimestamp);
   });
 
-  it("does not advance the timestamp when only the decorated frame changes", async () => {
+  it("does not advance the timestamp when only the custom footer changes", async () => {
     mockReadState.mockResolvedValue(makeEmptyState());
-    mockRenderDashboard.mockImplementation(renderVisibleBody);
+    mockRenderDashboard.mockImplementation(renderVisibleFrame);
     const timestamps = [new Date("2026-02-25T15:00:00Z"), new Date("2026-02-25T15:01:00Z")];
 
     let bar = "status:running";
     const writeSpy = vi.fn();
     const refresh = createRefreshCallback("/test/project", writeSpy, {
-      decorateFrame: (frame) => `${frame}\n${bar}`,
+      footerRenderer: (lastUpdated, cols) => `${bar}:${cols}:${lastUpdated.toISOString()}`,
       now: () => timestamps.shift() ?? new Date("2026-02-25T15:02:00Z"),
     });
     await refresh();

@@ -11,6 +11,12 @@ import type {
   SessionInfo,
 } from "./types.js";
 
+export type FooterRenderer = (lastUpdated: Date, cols: number) => string;
+
+export interface DashboardRenderOptions {
+  footerRenderer?: FooterRenderer;
+}
+
 const BOX_CHARS = {
   topLeft: "\u250C",
   topRight: "\u2510",
@@ -447,9 +453,7 @@ export function renderLiveLogPanel(liveLog: string[], cols: number): string {
   return box("Live Output", lines, cols);
 }
 
-export function renderFooter(lastUpdated: Date, cols: number): string {
-  const leftText = "q quit";
-  const rightText = `Updated: ${formatTime(lastUpdated)}`;
+export function renderFooterLine(leftText: string, rightText: string, cols: number): string {
   const availableWidth = Math.max(0, cols - 1);
   const minimumWidth = displayWidth(leftText) + 1 + displayWidth(rightText);
 
@@ -459,6 +463,10 @@ export function renderFooter(lastUpdated: Date, cols: number): string {
 
   const gap = availableWidth - displayWidth(leftText) - displayWidth(rightText);
   return ` ${chalk.dim(leftText)}${" ".repeat(gap)}${chalk.dim(rightText)}`;
+}
+
+export function renderFooter(lastUpdated: Date, cols: number): string {
+  return renderFooterLine("q quit", `Updated: ${formatTime(lastUpdated)}`, cols);
 }
 
 function hasAnyData(state: DashboardState): boolean {
@@ -474,9 +482,14 @@ function hasAnyData(state: DashboardState): boolean {
   );
 }
 
-export function renderDashboard(state: DashboardState, cols?: number): string {
+export function renderDashboard(
+  state: DashboardState,
+  cols?: number,
+  options: DashboardRenderOptions = {}
+): string {
   const width = cols ?? process.stdout.columns ?? 80;
   const referenceTime = state.lastUpdated.getTime();
+  const footerRenderer = options.footerRenderer ?? renderFooter;
 
   if (!hasAnyData(state)) {
     const lines: string[] = [];
@@ -484,7 +497,7 @@ export function renderDashboard(state: DashboardState, cols?: number): string {
     lines.push("");
     lines.push(chalk.dim(padRight("  Waiting for Ralph to start...", width)));
     lines.push("");
-    lines.push(renderFooter(state.lastUpdated, width));
+    lines.push(footerRenderer(state.lastUpdated, width));
     return lines.join("\n");
   }
 
@@ -504,7 +517,7 @@ export function renderDashboard(state: DashboardState, cols?: number): string {
   }
 
   sections.push(renderLogsPanel(state.recentLogs, width));
-  sections.push(renderFooter(state.lastUpdated, width));
+  sections.push(footerRenderer(state.lastUpdated, width));
 
   return sections
     .join("\n")

@@ -30,18 +30,148 @@ const PROGRESS_FILLED = "\u2588";
 const PROGRESS_EMPTY = "\u2591";
 
 // eslint-disable-next-line no-control-regex
-const ANSI_PATTERN = /\x1B\[\d+m/g;
+const ANSI_PATTERN = /\x1B\[[0-9;]*m/g;
+// eslint-disable-next-line no-control-regex
+const ANSI_PREFIX_PATTERN = /^\x1B\[[0-9;]*m/;
+// eslint-disable-next-line no-control-regex
+const VT_ESCAPE_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g;
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0B-\x1F\x7F]/g;
+const DISPLAY_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const COMBINING_MARK_PATTERN = /\p{Mark}/u;
+const EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
 
 function stripAnsi(str: string): string {
   return str.replace(ANSI_PATTERN, "");
 }
 
-export function padRight(str: string, len: number): string {
-  const visualLen = stripAnsi(str).length;
-  if (visualLen >= len) {
+function sanitizeExternalText(str: string): string {
+  return str
+    .replace(VT_ESCAPE_PATTERN, "")
+    .replace(/\r\n?/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\t/g, "    ")
+    .replace(CONTROL_CHAR_PATTERN, "");
+}
+
+function displayWidth(str: string): number {
+  return Array.from(DISPLAY_SEGMENTER.segment(stripAnsi(str))).reduce((width, segment) => {
+    return width + graphemeDisplayWidth(segment.segment);
+  }, 0);
+}
+
+function graphemeDisplayWidth(grapheme: string): number {
+  let width = 0;
+
+  for (const char of grapheme) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint === undefined || isZeroWidthChar(char, codePoint)) {
+      continue;
+    }
+
+    if (EMOJI_PATTERN.test(char) || isWideCodePoint(codePoint)) {
+      return 2;
+    }
+
+    width = 1;
+  }
+
+  return width;
+}
+
+function isZeroWidthChar(char: string, codePoint: number): boolean {
+  return (
+    COMBINING_MARK_PATTERN.test(char) ||
+    codePoint === 0x200c ||
+    codePoint === 0x200d ||
+    isVariationSelector(codePoint)
+  );
+}
+
+function isVariationSelector(codePoint: number): boolean {
+  return (
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f) || (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
+  );
+}
+
+function isWideCodePoint(codePoint: number): boolean {
+  return (
+    codePoint >= 0x1100 &&
+    (codePoint <= 0x115f ||
+      codePoint === 0x2329 ||
+      codePoint === 0x232a ||
+      (codePoint >= 0x2e80 && codePoint <= 0x3247 && codePoint !== 0x303f) ||
+      (codePoint >= 0x3250 && codePoint <= 0x4dbf) ||
+      (codePoint >= 0x4e00 && codePoint <= 0xa4c6) ||
+      (codePoint >= 0xa960 && codePoint <= 0xa97c) ||
+      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+      (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+      (codePoint >= 0xfe30 && codePoint <= 0xfe6b) ||
+      (codePoint >= 0xff01 && codePoint <= 0xff60) ||
+      (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+      (codePoint >= 0x1f300 && codePoint <= 0x1f64f) ||
+      (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) ||
+      (codePoint >= 0x20000 && codePoint <= 0x3fffd))
+  );
+}
+
+function truncateAnsi(str: string, len: number): string {
+  if (len <= 0) {
+    return "";
+  }
+
+  if (displayWidth(str) <= len) {
     return str;
   }
-  return str + " ".repeat(len - visualLen);
+
+  let result = "";
+  let index = 0;
+  let visibleCount = 0;
+  let sawAnsi = false;
+
+  outer: while (index < str.length) {
+    const ansiMatch = str.slice(index).match(ANSI_PREFIX_PATTERN);
+    if (ansiMatch) {
+      result += ansiMatch[0];
+      index += ansiMatch[0].length;
+      sawAnsi = true;
+      continue;
+    }
+
+    const nextAnsiIndex = str.indexOf("\x1B", index);
+    const textChunk = nextAnsiIndex === -1 ? str.slice(index) : str.slice(index, nextAnsiIndex);
+    for (const segment of DISPLAY_SEGMENTER.segment(textChunk)) {
+      const width = graphemeDisplayWidth(segment.segment);
+      if (visibleCount + width > len) {
+        break outer;
+      }
+
+      result += segment.segment;
+      visibleCount += width;
+    }
+
+    index += textChunk.length;
+  }
+
+  if (sawAnsi) {
+    result += "\x1B[0m";
+  }
+
+  return result;
+}
+
+export function padRight(str: string, len: number): string {
+  if (len <= 0) {
+    return "";
+  }
+
+  const fitted = truncateAnsi(str, len);
+  const visualLen = displayWidth(fitted);
+  if (visualLen >= len) {
+    return fitted;
+  }
+  return fitted + " ".repeat(len - visualLen);
 }
 
 export function progressBar(completed: number, total: number, width: number): string {
@@ -53,14 +183,13 @@ export function progressBar(completed: number, total: number, width: number): st
   return chalk.green(PROGRESS_FILLED.repeat(filled)) + PROGRESS_EMPTY.repeat(width - filled);
 }
 
-export function formatSessionAge(createdAt: string): string {
-  const now = Date.now();
+export function formatSessionAge(createdAt: string, referenceTime: number = Date.now()): string {
   const start = new Date(createdAt).getTime();
   if (Number.isNaN(start)) {
     return "0m 0s";
   }
 
-  const diffSeconds = Math.max(0, Math.floor((now - start) / 1000));
+  const diffSeconds = Math.max(0, Math.floor((referenceTime - start) / 1000));
 
   const hours = Math.floor(diffSeconds / 3600);
   const minutes = Math.floor((diffSeconds % 3600) / 60);
@@ -102,35 +231,38 @@ function formatTime(date: Date): string {
 }
 
 function extractTime(timestamp: string): string {
-  const timePart = timestamp.split(" ")[1];
-  return timePart ?? formatTime(new Date(timestamp));
+  const safeTimestamp = sanitizeExternalText(timestamp);
+  const timePart = safeTimestamp.split(" ")[1];
+  return timePart ?? formatTime(new Date(safeTimestamp));
 }
 
 export function box(title: string, lines: string[], cols: number): string {
-  const innerWidth = cols - 2;
-  const titleStr = title ? `\u2500 ${title} ` : "";
+  const innerWidth = Math.max(0, cols - 2);
+  const titleStr = title ? truncateAnsi(`\u2500 ${title} `, innerWidth) : "";
   const topBorder =
     BOX_CHARS.topLeft +
     titleStr +
-    BOX_CHARS.horizontal.repeat(Math.max(0, innerWidth - titleStr.length)) +
+    BOX_CHARS.horizontal.repeat(Math.max(0, innerWidth - displayWidth(titleStr))) +
     BOX_CHARS.topRight;
 
   const bottomBorder =
     BOX_CHARS.bottomLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.bottomRight;
 
   const contentLines = lines.map(
-    (line) => BOX_CHARS.vertical + " " + padRight(line, innerWidth - 1) + BOX_CHARS.vertical
+    (line) =>
+      BOX_CHARS.vertical + " " + padRight(line, Math.max(0, innerWidth - 1)) + BOX_CHARS.vertical
   );
 
   return [topBorder, ...contentLines, bottomBorder].join("\n");
 }
 
 export function renderHeader(cols: number): string {
-  const innerWidth = cols - 2;
-  const title = "RALPH MONITOR";
-  const padding = Math.max(0, Math.floor((innerWidth - title.length) / 2));
+  const innerWidth = Math.max(0, cols - 2);
+  const title = truncateAnsi("RALPH MONITOR", innerWidth);
+  const titleLength = displayWidth(title);
+  const padding = Math.max(0, Math.floor((innerWidth - titleLength) / 2));
   const centeredTitle =
-    " ".repeat(padding) + title + " ".repeat(innerWidth - padding - title.length);
+    " ".repeat(padding) + title + " ".repeat(Math.max(0, innerWidth - padding - titleLength));
 
   const topBorder =
     BOX_CHARS.headerLeft + BOX_CHARS.headerHoriz.repeat(innerWidth) + BOX_CHARS.headerRight;
@@ -147,7 +279,8 @@ export function renderLoopPanel(
   loop: LoopInfo | null,
   execution: ExecutionProgress | null,
   session: SessionInfo | null,
-  cols: number
+  cols: number,
+  referenceTime: number = Date.now()
 ): string {
   if (loop === null) {
     return box("Loop Status", ["Status: waiting for data"], cols);
@@ -158,33 +291,36 @@ export function renderLoopPanel(
       ? Math.round((loop.callsMadeThisHour / loop.maxCallsPerHour) * 100)
       : 0;
   const loopStr = `Loop: #${String(loop.loopCount)}`;
-  const statusStr = `Status: ${formatStatus(loop.status)}`;
+  const statusStr = `Status: ${formatStatus(sanitizeExternalText(loop.status))}`;
   const apiStr = `API: ${String(loop.callsMadeThisHour)}/${String(loop.maxCallsPerHour)} (${String(apiPercent)}%)`;
   const line1 = `${padRight(loopStr, 17)}${padRight(statusStr, 21)}${apiStr}`;
 
-  const sessionStr = session !== null ? `Session: ${formatSessionAge(session.createdAt)}` : "";
+  const sessionStr =
+    session !== null ? `Session: ${formatSessionAge(session.createdAt, referenceTime)}` : "";
   const innerWidth = cols - 4;
 
   let line2: string;
   if (execution !== null) {
     const elapsedStr = formatElapsed(execution.elapsedSeconds);
-    const executingStr = `${execution.indicator} executing (${elapsedStr})`;
-    const sessionPad = Math.max(0, innerWidth - executingStr.length - sessionStr.length);
+    const safeIndicator = sanitizeExternalText(execution.indicator);
+    const executingStr = `${safeIndicator} executing (${elapsedStr})`;
+    const sessionPad = Math.max(
+      0,
+      innerWidth - displayWidth(executingStr) - displayWidth(sessionStr)
+    );
     line2 = `${executingStr}${" ".repeat(sessionPad)}${sessionStr}`;
   } else {
-    const actionStr = `Action: ${loop.lastAction}`;
-    const sessionPad = Math.max(0, innerWidth - actionStr.length - sessionStr.length);
+    const actionStr = `Action: ${sanitizeExternalText(loop.lastAction)}`;
+    const sessionPad = Math.max(0, innerWidth - displayWidth(actionStr) - displayWidth(sessionStr));
     line2 = `${actionStr}${" ".repeat(sessionPad)}${sessionStr}`;
   }
 
   const lines = [line1, line2];
 
   if (execution !== null && execution.lastOutput.length > 0) {
+    const safeOutput = sanitizeExternalText(execution.lastOutput);
     const maxOutputLen = Math.max(0, innerWidth - 2);
-    const truncated =
-      execution.lastOutput.length > maxOutputLen
-        ? execution.lastOutput.slice(0, maxOutputLen)
-        : execution.lastOutput;
+    const truncated = truncateAnsi(safeOutput, maxOutputLen);
     lines.push(chalk.dim(`  ${truncated}`));
   }
 
@@ -199,13 +335,13 @@ export function renderCircuitBreakerPanel(cb: CircuitBreakerInfo | null, cols: n
   }
 
   const lines = [
-    `State: ${formatCBState(cb.state)}`,
+    `State: ${formatCBState(sanitizeExternalText(cb.state))}`,
     `No-progress: ${String(cb.consecutiveNoProgress)}`,
     `Opens: ${String(cb.totalOpens)}`,
   ];
 
   if (cb.state === "OPEN" && cb.reason) {
-    lines.push(`Reason: ${cb.reason}`);
+    lines.push(`Reason: ${sanitizeExternalText(cb.reason)}`);
   }
 
   return box("Circuit Breaker", lines, halfCols);
@@ -229,7 +365,7 @@ export function renderStoriesPanel(stories: StoryProgress | null, cols: number):
   ];
 
   if (stories.nextStory !== null) {
-    lines.push(`Next: ${stories.nextStory}`);
+    lines.push(`Next: ${sanitizeExternalText(stories.nextStory)}`);
   }
 
   return box("Stories", lines, halfCols);
@@ -257,25 +393,24 @@ export function renderAnalysisPanel(analysis: AnalysisInfo | null, cols: number)
   }
 
   const yesNo = (v: boolean): string => (v ? "yes" : "no");
-  const line1 = [
-    `Files: ${String(analysis.filesModified)}`,
-    `Confidence: ${String(analysis.confidenceScore)}%`,
-    `Test-only: ${yesNo(analysis.isTestOnly)}`,
-    `Stuck: ${yesNo(analysis.isStuck)}`,
-  ].join("    ");
-
-  const line2 = [
-    `Exit signal: ${yesNo(analysis.exitSignal)}`,
-    `Permission denials: ${String(analysis.permissionDenialCount)}`,
-  ].join("    ");
-
-  const line3 = [
-    `Claimed tasks: ${String(analysis.tasksCompletedThisLoop)}`,
-    `Checkbox delta: ${String(analysis.fixPlanCompletedDelta)}`,
+  const lines = [
+    [
+      `Files: ${String(analysis.filesModified)}`,
+      `Confidence: ${String(analysis.confidenceScore)}%`,
+    ].join("    "),
+    [`Test-only: ${yesNo(analysis.isTestOnly)}`, `Stuck: ${yesNo(analysis.isStuck)}`].join("    "),
+    [
+      `Exit signal: ${yesNo(analysis.exitSignal)}`,
+      `Permission denials: ${String(analysis.permissionDenialCount)}`,
+    ].join("    "),
+    [
+      `Claimed tasks: ${String(analysis.tasksCompletedThisLoop)}`,
+      `Checkbox delta: ${String(analysis.fixPlanCompletedDelta)}`,
+    ].join("    "),
     `Progress mismatch: ${yesNo(analysis.hasProgressTrackingMismatch)}`,
-  ].join("    ");
+  ];
 
-  return box("Last Analysis", [line1, line2, line3], cols);
+  return box("Last Analysis", lines, cols);
 }
 
 export function renderLogsPanel(logs: LogEntry[], cols: number): string {
@@ -286,10 +421,11 @@ export function renderLogsPanel(logs: LogEntry[], cols: number): string {
   const innerWidth = cols - 4;
   const lines = logs.map((entry) => {
     const time = extractTime(entry.timestamp);
-    const level = padRight(entry.level, 7);
+    const level = padRight(sanitizeExternalText(entry.level), 7);
     const prefix = `[${time}] ${level}`;
-    const maxMsg = Math.max(0, innerWidth - prefix.length - 1);
-    const msg = entry.message.length > maxMsg ? entry.message.slice(0, maxMsg) : entry.message;
+    const maxMsg = Math.max(0, innerWidth - displayWidth(prefix) - 1);
+    const safeMessage = sanitizeExternalText(entry.message);
+    const msg = truncateAnsi(safeMessage, maxMsg);
     return `${chalk.dim(`[${time}]`)} ${level} ${msg}`;
   });
 
@@ -303,7 +439,8 @@ export function renderLiveLogPanel(liveLog: string[], cols: number): string {
 
   const innerWidth = cols - 4;
   const lines = liveLog.map((line) => {
-    const trimmed = line.length > innerWidth ? line.slice(0, innerWidth) : line;
+    const safeLine = sanitizeExternalText(line);
+    const trimmed = truncateAnsi(safeLine, innerWidth);
     return chalk.dim(trimmed);
   });
 
@@ -311,10 +448,17 @@ export function renderLiveLogPanel(liveLog: string[], cols: number): string {
 }
 
 export function renderFooter(lastUpdated: Date, cols: number): string {
-  const left = chalk.dim("q quit");
-  const right = `Updated: ${formatTime(lastUpdated)}`;
-  const gap = Math.max(1, cols - "q quit".length - right.length);
-  return ` ${left}${" ".repeat(gap - 1)}${chalk.dim(right)}`;
+  const leftText = "q quit";
+  const rightText = `Updated: ${formatTime(lastUpdated)}`;
+  const availableWidth = Math.max(0, cols - 1);
+  const minimumWidth = displayWidth(leftText) + 1 + displayWidth(rightText);
+
+  if (availableWidth < minimumWidth) {
+    return ` ${truncateAnsi(`${leftText} ${rightText}`, availableWidth)}`;
+  }
+
+  const gap = availableWidth - displayWidth(leftText) - displayWidth(rightText);
+  return ` ${chalk.dim(leftText)}${" ".repeat(gap)}${chalk.dim(rightText)}`;
 }
 
 function hasAnyData(state: DashboardState): boolean {
@@ -332,6 +476,7 @@ function hasAnyData(state: DashboardState): boolean {
 
 export function renderDashboard(state: DashboardState, cols?: number): string {
   const width = cols ?? process.stdout.columns ?? 80;
+  const referenceTime = state.lastUpdated.getTime();
 
   if (!hasAnyData(state)) {
     const lines: string[] = [];
@@ -346,7 +491,7 @@ export function renderDashboard(state: DashboardState, cols?: number): string {
   const sections: string[] = [];
 
   sections.push(renderHeader(width));
-  sections.push(renderLoopPanel(state.loop, state.execution, state.session, width));
+  sections.push(renderLoopPanel(state.loop, state.execution, state.session, width, referenceTime));
 
   const leftPanel = renderCircuitBreakerPanel(state.circuitBreaker, width);
   const rightPanel = renderStoriesPanel(state.stories, width);
@@ -361,5 +506,9 @@ export function renderDashboard(state: DashboardState, cols?: number): string {
   sections.push(renderLogsPanel(state.recentLogs, width));
   sections.push(renderFooter(state.lastUpdated, width));
 
-  return sections.join("\n");
+  return sections
+    .join("\n")
+    .split("\n")
+    .map((line) => truncateAnsi(line, width))
+    .join("\n");
 }

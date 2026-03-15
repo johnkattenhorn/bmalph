@@ -9,11 +9,17 @@ vi.mock("../../src/watch/dashboard.js", () => ({
   startDashboard: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../../src/watch/frame-writer.js", () => ({
+  getDashboardTerminalSupport: vi.fn(() => ({ supported: true })),
+}));
+
 import chalk from "chalk";
 import { watchCommand } from "../../src/commands/watch.js";
 import { startDashboard } from "../../src/watch/dashboard.js";
+import { getDashboardTerminalSupport } from "../../src/watch/frame-writer.js";
 
 const mockStartDashboard = vi.mocked(startDashboard);
+const mockGetDashboardTerminalSupport = vi.mocked(getDashboardTerminalSupport);
 
 describe("watchCommand", () => {
   let testDir: string;
@@ -21,6 +27,7 @@ describe("watchCommand", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockGetDashboardTerminalSupport.mockReturnValue({ supported: true });
     testDir = join(
       tmpdir(),
       `bmalph-watch-cmd-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -159,5 +166,29 @@ describe("watchCommand", () => {
       projectDir: testDir,
       interval: 500,
     });
+  });
+
+  it("fails when the terminal does not support in-place dashboard rendering", async () => {
+    await writeFile(
+      join(testDir, "bmalph", "config.json"),
+      JSON.stringify({
+        name: "test-project",
+        description: "",
+        createdAt: "2026-02-25T00:00:00Z",
+      })
+    );
+    mockGetDashboardTerminalSupport.mockReturnValue({
+      supported: false,
+      reason: "Dashboard requires an interactive terminal with cursor support.",
+    });
+
+    await watchCommand({ projectDir: testDir });
+
+    expect(process.exitCode).toBe(1);
+    expect(mockStartDashboard).not.toHaveBeenCalled();
+    expect(consoleSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+      "interactive terminal"
+    );
+    process.exitCode = undefined;
   });
 });

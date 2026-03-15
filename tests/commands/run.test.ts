@@ -27,6 +27,10 @@ vi.mock("../../src/platform/cursor-runtime-checks.js", () => ({
   validateCursorRuntime: vi.fn(),
 }));
 
+vi.mock("../../src/watch/frame-writer.js", () => ({
+  getDashboardTerminalSupport: vi.fn(() => ({ supported: true })),
+}));
+
 describe("runCommand", () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
   let consoleSpy: ReturnType<typeof vi.spyOn>;
@@ -39,6 +43,11 @@ describe("runCommand", () => {
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     originalExitCode = process.exitCode;
     process.exitCode = undefined;
+  });
+
+  beforeEach(async () => {
+    const { getDashboardTerminalSupport } = await import("../../src/watch/frame-writer.js");
+    vi.mocked(getDashboardTerminalSupport).mockReturnValue({ supported: true });
   });
 
   afterEach(() => {
@@ -398,6 +407,58 @@ describe("runCommand", () => {
   });
 
   describe("execution modes", () => {
+    it("falls back to headless mode when the dashboard terminal is unsupported", async () => {
+      const { readConfig } = await import("../../src/utils/config.js");
+      const { getPlatform } = await import("../../src/platform/registry.js");
+      const { validateBashAvailable, validateRalphLoop, spawnRalphLoop } =
+        await import("../../src/run/ralph-process.js");
+      const { startRunDashboard } = await import("../../src/run/run-dashboard.js");
+      const { getDashboardTerminalSupport } = await import("../../src/watch/frame-writer.js");
+
+      vi.mocked(readConfig).mockResolvedValue({
+        name: "test",
+        description: "",
+        createdAt: "2026-02-28",
+        platform: "claude-code",
+      });
+      vi.mocked(getPlatform).mockReturnValue(mockPlatform());
+      vi.mocked(validateBashAvailable).mockResolvedValue(undefined);
+      vi.mocked(validateRalphLoop).mockResolvedValue(undefined);
+      vi.mocked(getDashboardTerminalSupport).mockReturnValue({
+        supported: false,
+        reason: "Dashboard requires an interactive terminal with cursor support.",
+      });
+
+      const onExitCb: Array<(code: number | null) => void> = [];
+      vi.mocked(spawnRalphLoop).mockReturnValue({
+        child: { pid: 123 },
+        state: "running",
+        exitCode: null,
+        kill: vi.fn(),
+        detach: vi.fn(),
+        onExit: vi.fn((cb) => onExitCb.push(cb)),
+      } as never);
+
+      const { runCommand } = await import("../../src/commands/run.js");
+      const promise = runCommand({
+        projectDir: "/test/project",
+        interval: "2000",
+        dashboard: true,
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+      for (const cb of onExitCb) cb(0);
+      await promise;
+
+      expect(startRunDashboard).not.toHaveBeenCalled();
+      expect(spawnRalphLoop).toHaveBeenCalledWith("/test/project", "claude-code", {
+        inheritStdio: true,
+      });
+      expect(consoleSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        "interactive terminal"
+      );
+    });
+
     it("starts dashboard when dashboard is true", async () => {
       const { readConfig } = await import("../../src/utils/config.js");
       const { getPlatform } = await import("../../src/platform/registry.js");

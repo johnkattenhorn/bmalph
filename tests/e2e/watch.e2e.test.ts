@@ -22,9 +22,11 @@ describe("bmalph watch e2e", { timeout: 60000 }, () => {
 
     expect(result.stderr).toContain("deprecated");
     expect(result.stderr).toContain("bmalph run");
+    expect(result.stderr).toContain("interactive terminal");
+    expect(result.exitCode).toBe(1);
   });
 
-  it("renders dashboard with Ralph state files", async () => {
+  it("fails fast in non-interactive terminals even when Ralph state files exist", async () => {
     project = await createTestProject();
     await runInit(project.path);
 
@@ -51,8 +53,9 @@ describe("bmalph watch e2e", { timeout: 60000 }, () => {
 
     const result = await runWatch(project.path, 500, 3000);
 
-    expect(result.stdout).toContain("RALPH MONITOR");
-    expect(result.stdout).toContain("#7");
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("interactive terminal");
+    expect(result.stdout).not.toContain("RALPH MONITOR");
   });
 
   it("exits with error when project not initialized", async () => {
@@ -62,14 +65,5 @@ describe("bmalph watch e2e", { timeout: 60000 }, () => {
 
     expect(result.stderr).toContain("not initialized");
     expect(result.exitCode).toBe(1);
-  });
-
-  it("shows waiting state when no Ralph state files exist", async () => {
-    project = await createTestProject();
-    await runInit(project.path);
-
-    const result = await runWatch(project.path, 500, 3000);
-
-    expect(result.stdout).toContain("Waiting for Ralph");
   });
 });

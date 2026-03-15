@@ -6,6 +6,7 @@ import { validateCursorRuntime } from "../platform/cursor-runtime-checks.js";
 import { validateBashAvailable, validateRalphLoop, spawnRalphLoop } from "../run/ralph-process.js";
 import { startRunDashboard } from "../run/run-dashboard.js";
 import { parseInterval } from "../utils/validate.js";
+import { getDashboardTerminalSupport } from "../watch/frame-writer.js";
 import type { Platform, PlatformId } from "../platform/types.js";
 
 interface RunCommandOptions {
@@ -40,6 +41,14 @@ async function executeRun(options: RunCommandOptions): Promise<void> {
   }
 
   const interval = parseInterval(options.interval);
+  let useDashboard = dashboard;
+  if (useDashboard) {
+    const terminalSupport = getDashboardTerminalSupport();
+    if (!terminalSupport.supported) {
+      console.log(chalk.yellow(`Warning: dashboard disabled. ${terminalSupport.reason}`));
+      useDashboard = false;
+    }
+  }
 
   await Promise.all([validateBashAvailable(), validateRalphLoop(projectDir)]);
   if (platform.id === "cursor") {
@@ -47,10 +56,10 @@ async function executeRun(options: RunCommandOptions): Promise<void> {
   }
 
   const ralph = spawnRalphLoop(projectDir, platform.id, {
-    inheritStdio: !dashboard,
+    inheritStdio: !useDashboard,
   });
 
-  if (dashboard) {
+  if (useDashboard) {
     await startRunDashboard({ projectDir, interval, ralph });
     if (ralph.state === "stopped") {
       applyRalphExitCode(ralph.exitCode);

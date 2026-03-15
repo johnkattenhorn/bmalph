@@ -3,7 +3,6 @@ import type { RalphProcess } from "../../src/run/types.js";
 
 vi.mock("../../src/watch/dashboard.js", () => ({
   createRefreshCallback: vi.fn(),
-  setupTerminal: vi.fn(),
 }));
 
 vi.mock("../../src/watch/file-watcher.js", () => ({
@@ -11,6 +10,13 @@ vi.mock("../../src/watch/file-watcher.js", () => ({
     this.start = vi.fn();
     this.stop = vi.fn();
   }),
+}));
+
+vi.mock("../../src/watch/frame-writer.js", () => ({
+  createTerminalFrameWriter: vi.fn(() => ({
+    cleanup: vi.fn(),
+    write: vi.fn(),
+  })),
 }));
 
 describe("renderStatusBar", () => {
@@ -79,21 +85,21 @@ describe("renderQuitPrompt", () => {
 });
 
 describe("startRunDashboard", () => {
-  let mockSetupTerminal: ReturnType<typeof vi.fn>;
   let mockCreateRefreshCallback: ReturnType<typeof vi.fn>;
+  let mockCreateTerminalFrameWriter: ReturnType<typeof vi.fn>;
   let MockFileWatcher: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
 
     const dashboardMod = await import("../../src/watch/dashboard.js");
-    mockSetupTerminal = vi.mocked(dashboardMod.setupTerminal);
     mockCreateRefreshCallback = vi.mocked(dashboardMod.createRefreshCallback);
+    const frameWriterMod = await import("../../src/watch/frame-writer.js");
+    mockCreateTerminalFrameWriter = vi.mocked(frameWriterMod.createTerminalFrameWriter);
 
     const fwMod = await import("../../src/watch/file-watcher.js");
     MockFileWatcher = vi.mocked(fwMod.FileWatcher);
 
-    mockSetupTerminal.mockReturnValue(vi.fn());
     mockCreateRefreshCallback.mockReturnValue(vi.fn());
   });
 
@@ -124,7 +130,7 @@ describe("startRunDashboard", () => {
     expect(instance.start).toHaveBeenCalled();
   });
 
-  it("calls setupTerminal for cursor control", async () => {
+  it("creates a terminal frame writer for cursor control", async () => {
     const ralph = createMockRalphProcess();
 
     const { startRunDashboard } = await import("../../src/run/run-dashboard.js");
@@ -133,7 +139,7 @@ describe("startRunDashboard", () => {
     triggerExit(ralph, 0);
     await resolveViaTick(promise);
 
-    expect(mockSetupTerminal).toHaveBeenCalled();
+    expect(mockCreateTerminalFrameWriter).toHaveBeenCalled();
   });
 
   it("registers an exit callback on ralph", async () => {
@@ -148,17 +154,66 @@ describe("startRunDashboard", () => {
     await resolveViaTick(promise);
   });
 
-  it("wraps the refresh callback to include a write interceptor", async () => {
+  it("passes a decorator that appends the status bar to the dashboard frame", async () => {
     const ralph = createMockRalphProcess();
 
     const { startRunDashboard } = await import("../../src/run/run-dashboard.js");
     const promise = startRunDashboard({ projectDir: "/project", interval: 2000, ralph });
 
-    // createRefreshCallback should receive a wrapped write function
-    expect(mockCreateRefreshCallback).toHaveBeenCalledWith("/project", expect.any(Function));
+    expect(mockCreateRefreshCallback).toHaveBeenCalledWith(
+      "/project",
+      expect.any(Function),
+      expect.objectContaining({
+        decorateFrame: expect.any(Function),
+      })
+    );
+
+    const options = mockCreateRefreshCallback.mock.calls[0]![2] as {
+      decorateFrame: (frame: string) => string;
+    };
+    expect(options.decorateFrame("dashboard")).toContain("Ralph: running");
 
     triggerExit(ralph, 0);
     await resolveViaTick(promise);
+  });
+
+  it("does not refresh or rerun cleanup after signal stop when Ralph exits later", async () => {
+    const refresh = vi.fn();
+    const cleanup = vi.fn();
+    mockCreateRefreshCallback.mockReturnValue(refresh);
+    mockCreateTerminalFrameWriter.mockReturnValue({
+      cleanup,
+      write: vi.fn(),
+    });
+
+    const ralph = createMockRalphProcess();
+    const stdinIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    const processOnSpy = vi.spyOn(process, "on");
+
+    try {
+      const { startRunDashboard } = await import("../../src/run/run-dashboard.js");
+      const promise = startRunDashboard({ projectDir: "/project", interval: 2000, ralph });
+
+      const sigintHandler = getRegisteredProcessHandler(processOnSpy, "SIGINT");
+      sigintHandler();
+
+      await resolveViaTick(promise);
+
+      triggerExit(ralph, 0);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const watcher = MockFileWatcher.mock.instances[0] as { stop: ReturnType<typeof vi.fn> };
+      expect(refresh).not.toHaveBeenCalled();
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      expect(watcher.stop).toHaveBeenCalledTimes(1);
+    } finally {
+      restoreProperty(process.stdin, "isTTY", stdinIsTTY);
+    }
   });
 });
 
@@ -199,4 +254,28 @@ async function resolveViaTick(promise: Promise<unknown>): Promise<void> {
     new Promise((r) => setTimeout(r, 100)),
   ]);
   expect(resolved).toBe(true);
+}
+
+function getRegisteredProcessHandler(
+  processOnSpy: ReturnType<typeof vi.spyOn>,
+  event: "SIGINT" | "SIGTERM"
+): () => void {
+  const registration = processOnSpy.mock.calls.find(
+    ([registeredEvent]) => registeredEvent === event
+  );
+  expect(registration).toBeDefined();
+  return registration![1] as () => void;
+}
+
+function restoreProperty<T extends object, K extends keyof T>(
+  target: T,
+  key: K,
+  descriptor: PropertyDescriptor | undefined
+): void {
+  if (descriptor) {
+    Object.defineProperty(target, key, descriptor);
+    return;
+  }
+
+  delete target[key];
 }

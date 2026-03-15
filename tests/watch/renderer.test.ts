@@ -125,6 +125,133 @@ describe("renderer", () => {
       expect(output).toContain("#3");
       expect(output).toContain("N/A");
     });
+
+    it("keeps idle output stable when only wall-clock time changes", () => {
+      const loop: LoopInfo = {
+        loopCount: 8,
+        status: "running",
+        lastAction: "waiting",
+        callsMadeThisHour: 12,
+        maxCallsPerHour: 100,
+      };
+      const session: SessionInfo = {
+        createdAt: "2026-02-25T14:10:15Z",
+      };
+      const state = makeState({
+        loop,
+        session,
+        lastUpdated: new Date("2026-02-25T14:25:15Z"),
+      });
+
+      vi.spyOn(Date, "now").mockReturnValue(new Date("2026-02-25T14:25:15Z").getTime());
+      const first = renderDashboard(state, COLS);
+
+      vi.spyOn(Date, "now").mockReturnValue(new Date("2026-02-25T14:45:15Z").getTime());
+      const second = renderDashboard(state, COLS);
+
+      expect(second).toBe(first);
+    });
+
+    it("clamps rendered lines to the available terminal width", () => {
+      const loop: LoopInfo = {
+        loopCount: 8,
+        status: "running",
+        lastAction: "executing a very long action description that would normally wrap",
+        callsMadeThisHour: 12,
+        maxCallsPerHour: 100,
+      };
+      const analysis: AnalysisInfo = {
+        filesModified: 14,
+        confidenceScore: 97,
+        isTestOnly: false,
+        isStuck: false,
+        exitSignal: false,
+        tasksCompletedThisLoop: 1,
+        fixPlanCompletedDelta: 1,
+        hasProgressTrackingMismatch: true,
+        hasPermissionDenials: true,
+        permissionDenialCount: 12,
+      };
+      const output = renderDashboard(
+        makeState({
+          loop,
+          analysis,
+          recentLogs: [
+            {
+              timestamp: "2026-02-25 14:20:00",
+              level: "INFO",
+              message: "A deliberately long activity line that should not wrap the dashboard frame",
+            },
+          ],
+        }),
+        40
+      );
+
+      for (const line of output.split("\n")) {
+        expect(line.length).toBeLessThanOrEqual(40);
+      }
+    });
+
+    it("keeps CJK text within the available terminal columns", () => {
+      const output = renderDashboard(
+        makeState({
+          loop: {
+            loopCount: 8,
+            status: "running",
+            lastAction: "漢字漢字漢字漢字漢字",
+            callsMadeThisHour: 12,
+            maxCallsPerHour: 100,
+          },
+        }),
+        24
+      );
+
+      for (const line of output.split("\n")) {
+        expect(displayWidth(line)).toBeLessThanOrEqual(24);
+      }
+    });
+
+    it("keeps emoji grapheme clusters within the available terminal columns", () => {
+      const output = renderDashboard(
+        makeState({
+          loop: {
+            loopCount: 8,
+            status: "running",
+            lastAction: "building",
+            callsMadeThisHour: 12,
+            maxCallsPerHour: 100,
+          },
+          execution: {
+            status: "executing",
+            elapsedSeconds: 45,
+            indicator: "😀😀😀😀😀😀",
+            lastOutput: "",
+          },
+        }),
+        20
+      );
+
+      for (const line of output.split("\n")) {
+        expect(displayWidth(line)).toBeLessThanOrEqual(20);
+      }
+    });
+
+    it("sanitizes loop action text before rendering", () => {
+      const loop: LoopInfo = {
+        loopCount: 8,
+        status: "running",
+        lastAction: "planning\r\x1B[31m\tbuild\u0007",
+        callsMadeThisHour: 12,
+        maxCallsPerHour: 100,
+      };
+      const output = renderDashboard(makeState({ loop }), COLS);
+
+      expect(output).toMatch(/planning +build/);
+      expect(output).not.toContain("\r");
+      expect(output).not.toContain("\u001B");
+      expect(output).not.toContain("\u0007");
+      expect(output).not.toContain("\t");
+    });
   });
 
   describe("renderHeader", () => {
@@ -579,6 +706,16 @@ describe("renderer", () => {
       expect(output).toContain("Live Output");
       expect(output).toContain("No live output yet");
     });
+
+    it("sanitizes terminal control bytes in live output", () => {
+      const output = renderLiveLogPanel(["Running\rtests\x1B[2K\tOK\u0007"], COLS);
+
+      expect(output).toContain("Running tests    OK");
+      expect(output).not.toContain("\r");
+      expect(output).not.toContain("\u001B");
+      expect(output).not.toContain("\u0007");
+      expect(output).not.toContain("\t");
+    });
   });
 
   describe("formatElapsed", () => {
@@ -663,3 +800,67 @@ describe("renderer", () => {
     });
   });
 });
+
+// eslint-disable-next-line no-control-regex
+const ANSI_PATTERN = /\x1B\[[0-9;]*m/g;
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const MARK_PATTERN = /^\p{Mark}+$/u;
+const EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
+
+function displayWidth(str: string): number {
+  return Array.from(segmenter.segment(stripAnsi(str))).reduce((width, segment) => {
+    return width + graphemeWidth(segment.segment);
+  }, 0);
+}
+
+function stripAnsi(str: string): string {
+  return str.replace(ANSI_PATTERN, "");
+}
+
+function graphemeWidth(grapheme: string): number {
+  let width = 0;
+
+  for (const char of grapheme) {
+    if (MARK_PATTERN.test(char) || char === "\u200d" || isVariationSelector(char)) {
+      continue;
+    }
+
+    if (EMOJI_PATTERN.test(char) || isWideCodePoint(char.codePointAt(0) ?? 0)) {
+      width = 2;
+      continue;
+    }
+
+    width = Math.max(width, 1);
+  }
+
+  return width;
+}
+
+function isVariationSelector(char: string): boolean {
+  const codePoint = char.codePointAt(0) ?? 0;
+  return (
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f) || (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
+  );
+}
+
+function isWideCodePoint(codePoint: number): boolean {
+  return (
+    codePoint >= 0x1100 &&
+    (codePoint <= 0x115f ||
+      codePoint === 0x2329 ||
+      codePoint === 0x232a ||
+      (codePoint >= 0x2e80 && codePoint <= 0x3247 && codePoint !== 0x303f) ||
+      (codePoint >= 0x3250 && codePoint <= 0x4dbf) ||
+      (codePoint >= 0x4e00 && codePoint <= 0xa4c6) ||
+      (codePoint >= 0xa960 && codePoint <= 0xa97c) ||
+      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+      (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+      (codePoint >= 0xfe30 && codePoint <= 0xfe6b) ||
+      (codePoint >= 0xff01 && codePoint <= 0xff60) ||
+      (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+      (codePoint >= 0x1f300 && codePoint <= 0x1f64f) ||
+      (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) ||
+      (codePoint >= 0x20000 && codePoint <= 0x3fffd))
+  );
+}

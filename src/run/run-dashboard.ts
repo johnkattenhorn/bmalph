@@ -1,4 +1,5 @@
-import { createRefreshCallback, setupTerminal } from "../watch/dashboard.js";
+import { createRefreshCallback } from "../watch/dashboard.js";
+import { createTerminalFrameWriter } from "../watch/frame-writer.js";
 import { FileWatcher } from "../watch/file-watcher.js";
 import type { RalphProcess } from "./types.js";
 
@@ -27,19 +28,32 @@ export function renderQuitPrompt(): string {
 export async function startRunDashboard(options: RunDashboardOptions): Promise<void> {
   const { projectDir, interval, ralph } = options;
 
-  const cleanup = setupTerminal();
+  const frameWriter = createTerminalFrameWriter();
   let statusBarText = renderStatusBar(ralph);
   let showingPrompt = false;
+  let stopped = false;
 
-  const write = (s: string): void => {
+  const decorateFrame = (frame: string): string => {
     const bar = showingPrompt ? renderQuitPrompt() : statusBarText;
-    process.stdout.write(s + bar + "\n");
+    return `${frame}\n${bar}`;
   };
 
-  const refresh = createRefreshCallback(projectDir, write);
+  const refresh = createRefreshCallback(
+    projectDir,
+    (frame) => {
+      if (stopped) {
+        return;
+      }
+      frameWriter.write(frame);
+    },
+    { decorateFrame }
+  );
   const watcher = new FileWatcher(refresh, interval);
 
   ralph.onExit(() => {
+    if (stopped) {
+      return;
+    }
     statusBarText = renderStatusBar(ralph);
     void refresh();
   });
@@ -93,8 +107,12 @@ export async function startRunDashboard(options: RunDashboardOptions): Promise<v
     };
 
     const stop = (): void => {
+      if (stopped) {
+        return;
+      }
+      stopped = true;
       watcher.stop();
-      cleanup();
+      frameWriter.cleanup();
       process.removeListener("SIGINT", onSignal);
       process.removeListener("SIGTERM", onSignal);
       process.stdout.removeListener("resize", onResize);

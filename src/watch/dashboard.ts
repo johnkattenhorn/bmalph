@@ -1,44 +1,55 @@
 import { readDashboardState } from "./state-reader.js";
 import { renderDashboard } from "./renderer.js";
+import { createTerminalFrameWriter } from "./frame-writer.js";
 import { FileWatcher } from "./file-watcher.js";
 import type { WatchOptions } from "./types.js";
 
-const CLEAR_SCREEN = "\x1B[2J\x1B[H";
-const HIDE_CURSOR = "\x1B[?25l";
-const SHOW_CURSOR = "\x1B[?25h";
+export interface RefreshCallbackOptions {
+  decorateFrame?: (frame: string) => string;
+  now?: () => Date;
+}
 
 export function createRefreshCallback(
   projectDir: string,
-  write: (s: string) => void
+  write: (frame: string) => void,
+  options: RefreshCallbackOptions = {}
 ): () => Promise<void> {
+  const now = options.now ?? (() => new Date());
+  let lastMeaningfulUpdate: Date | undefined;
+  let lastRenderedBody: string | undefined;
+
   return async (): Promise<void> => {
     const state = await readDashboardState(projectDir);
-    const output = renderDashboard(state);
-    write(CLEAR_SCREEN + output + "\n");
-  };
-}
-
-export function setupTerminal(): () => void {
-  if (process.stdout.isTTY) {
-    process.stdout.write(HIDE_CURSOR);
-  }
-
-  return (): void => {
-    if (process.stdout.isTTY) {
-      process.stdout.write(SHOW_CURSOR);
+    if (lastMeaningfulUpdate === undefined) {
+      lastMeaningfulUpdate = now();
     }
-    if (process.stdin.isTTY && process.stdin.setRawMode) {
-      process.stdin.setRawMode(false);
+
+    let body = renderDashboard({
+      ...state,
+      lastUpdated: lastMeaningfulUpdate,
+    });
+
+    if (lastRenderedBody !== undefined && body !== lastRenderedBody) {
+      lastMeaningfulUpdate = now();
+      body = renderDashboard({
+        ...state,
+        lastUpdated: lastMeaningfulUpdate,
+      });
     }
-    process.stdin.pause();
+
+    lastRenderedBody = body;
+    const frame = options.decorateFrame ? options.decorateFrame(body) : body;
+    write(frame);
   };
 }
 
 export async function startDashboard(options: WatchOptions): Promise<void> {
   const { projectDir, interval } = options;
 
-  const cleanup = setupTerminal();
-  const refresh = createRefreshCallback(projectDir, (s) => process.stdout.write(s));
+  const frameWriter = createTerminalFrameWriter();
+  const refresh = createRefreshCallback(projectDir, (frame) => {
+    frameWriter.write(frame);
+  });
   const watcher = new FileWatcher(refresh, interval);
 
   return new Promise<void>((resolve) => {
@@ -61,7 +72,7 @@ export async function startDashboard(options: WatchOptions): Promise<void> {
       if (stopped) return;
       stopped = true;
       watcher.stop();
-      cleanup();
+      frameWriter.cleanup();
       process.removeListener("SIGINT", onSignal);
       process.removeListener("SIGTERM", onSignal);
       process.stdout.removeListener("resize", onResize);

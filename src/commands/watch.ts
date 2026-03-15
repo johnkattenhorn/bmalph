@@ -3,6 +3,7 @@ import { readConfig } from "../utils/config.js";
 import { withErrorHandling } from "../utils/errors.js";
 import { parseInterval } from "../utils/validate.js";
 import { startDashboard } from "../watch/dashboard.js";
+import { getDashboardTerminalSupport } from "../watch/frame-writer.js";
 
 interface WatchCommandOptions {
   interval?: string;
@@ -24,6 +25,10 @@ async function runWatch(options: WatchCommandOptions): Promise<void> {
   }
 
   const interval = parseInterval(options.interval);
+  const terminalSupport = getDashboardTerminalSupport();
+  if (!terminalSupport.supported) {
+    throw new Error(terminalSupport.reason);
+  }
 
   await startDashboard({ projectDir, interval });
 }

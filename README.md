@@ -279,12 +279,12 @@ BMAD (add Epic 2) → bmalph implement → Ralph sees changes + picks up Epic 2
 
 ### run options
 
-| Flag                  | Description                                                              |
-| --------------------- | ------------------------------------------------------------------------ |
-| `--driver <platform>` | Override platform driver (claude-code, codex, opencode, copilot, cursor) |
+| Flag                   | Description                                                                 |
+| ---------------------- | --------------------------------------------------------------------------- |
+| `--driver <platform>`  | Override platform driver (claude-code, codex, opencode, copilot, cursor)    |
 | `--review/--no-review` | Enable/disable periodic code review (Claude Code only, prompted by default) |
-| `--interval <ms>`     | Dashboard refresh interval in milliseconds (default: 2000)               |
-| `--no-dashboard`      | Run Ralph without the dashboard overlay                                  |
+| `--interval <ms>`      | Dashboard refresh interval in milliseconds (default: 2000)                  |
+| `--no-dashboard`       | Run Ralph without the dashboard overlay                                     |
 
 ### watch options
 

@@ -1345,7 +1345,8 @@ should_run_review() {
 }
 
 # Build review findings context for injection into the next implementation loop
-# Returns a compact string (max 500 chars) with unresolved findings
+# Returns a compact string (max 500-700 chars) with unresolved findings
+# HIGH/CRITICAL findings get a PRIORITY prefix and a higher char cap (700)
 build_review_context() {
     if [[ ! -f "$REVIEW_FINDINGS_FILE" ]]; then
         echo ""
@@ -1362,7 +1363,15 @@ build_review_context() {
         return
     fi
 
-    local context="REVIEW FINDINGS ($severity, $issues_found issues): $summary"
+    # HIGH/CRITICAL findings: instruct the AI to fix them before picking a new story
+    local context=""
+    local max_len=500
+    if [[ "$severity" == "HIGH" || "$severity" == "CRITICAL" ]]; then
+        context="PRIORITY: Fix these code review findings BEFORE picking a new story. "
+        max_len=700
+    fi
+    context+="REVIEW FINDINGS ($severity, $issues_found issues): $summary"
+
     # Include top details if space allows
     local top_details
     top_details=$(jq -r '(.details[:2] // []) | map("- [\(.severity)] \(.file): \(.issue)") | join("; ")' "$REVIEW_FINDINGS_FILE" 2>/dev/null | head -c 150)
@@ -1370,7 +1379,7 @@ build_review_context() {
         context+=" Details: $top_details"
     fi
 
-    echo "${context:0:500}"
+    echo "${context:0:$max_len}"
 }
 
 # Execute a periodic code review loop (read-only, no file modifications)
@@ -2530,6 +2539,11 @@ main() {
             fi
 
             update_status "$loop_count" "$(cat "$CALL_COUNT_FILE")" "completed" "success"
+
+            # Consume review findings after successful execution — the AI has received
+            # the context via --append-system-prompt. Deleting here (not in
+            # build_review_context) ensures findings survive transient loop failures.
+            rm -f "$REVIEW_FINDINGS_FILE"
 
             # Code review check
             local fix_plan_delta=0

@@ -2,10 +2,14 @@
 # Tests for ralph/drivers/claude-code.sh
 # Validates CLI binary, tool list, and command assembly for Claude Code.
 
-setup() {
+setup_file() {
     load '../test_helper/common-setup'
-    _common_setup
+    _common_setup_file
     source "$RALPH_DRIVERS/claude-code.sh"
+}
+
+setup() {
+    _common_setup
 }
 
 teardown() {

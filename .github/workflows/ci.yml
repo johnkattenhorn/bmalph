@@ -70,7 +70,7 @@ jobs:
 
       - name: Bash tests
         if: matrix.os == 'ubuntu-latest'
-        run: bats tests/bash/*.bats tests/bash/drivers/*.bats
+        run: npm run test:bash
 
       - name: Upload coverage to Codecov
         if: matrix.node-version == 22 && matrix.os == 'ubuntu-latest'

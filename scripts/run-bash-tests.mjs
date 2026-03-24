@@ -135,11 +135,40 @@ async function restoreOriginalLineEndings() {
   originalContents.clear();
 }
 
-function runBats(batsCmd, files) {
-  return new Promise((resolve, reject) => {
-    const child = spawnInBash(`${batsCmd} ${files.map((file) => quoteForBash(file)).join(" ")}`, {
-      stdio: "inherit",
+function getBatsVersion(batsCmd) {
+  return new Promise((resolve) => {
+    const child = spawnInBash(`${batsCmd} --version`, { stdio: ["ignore", "pipe", "ignore"] });
+    let output = "";
+    child.stdout.on("data", (data) => {
+      output += data;
     });
+    child.on("error", () => resolve(null));
+    child.on("close", () => {
+      const match = output.match(/(\d+)\.(\d+)\.(\d+)/);
+      resolve(match ? [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])] : null);
+    });
+  });
+}
+
+async function getParallelFlags(batsCmd) {
+  // --jobs requires BATS 1.7.0+; skip on Windows (fork overhead makes it worse)
+  if (USE_WINDOWS_SHELL) return "";
+
+  const version = await getBatsVersion(batsCmd);
+  if (!version || version[0] < 1 || (version[0] === 1 && version[1] < 7)) return "";
+
+  const { cpus } = await import("node:os");
+  const jobs = Math.min(cpus().length, 4);
+  return `--jobs ${jobs} --no-parallelize-within-files`;
+}
+
+function runBats(batsCmd, files, parallelFlags) {
+  return new Promise((resolve, reject) => {
+    const flags = parallelFlags ? `${parallelFlags} ` : "";
+    const child = spawnInBash(
+      `${batsCmd} ${flags}${files.map((file) => quoteForBash(file)).join(" ")}`,
+      { stdio: "inherit" }
+    );
 
     child.on("error", (error) => {
       reject(error);
@@ -183,7 +212,12 @@ async function main() {
       return 0;
     }
 
-    return runBats(batsCmd, batsFiles);
+    const parallelFlags = await getParallelFlags(batsCmd);
+    if (parallelFlags) {
+      process.stdout.write(`[info] parallel mode: ${parallelFlags}\n`);
+    }
+
+    return runBats(batsCmd, batsFiles, parallelFlags);
   } finally {
     await restoreOriginalLineEndings();
   }

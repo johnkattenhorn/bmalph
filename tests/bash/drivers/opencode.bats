@@ -2,10 +2,14 @@
 # Tests for ralph/drivers/opencode.sh
 # Validates CLI binary, command assembly, session fallback, and live-stream support.
 
-setup() {
+setup_file() {
     load '../test_helper/common-setup'
-    _common_setup
+    _common_setup_file
     source "$RALPH_DRIVERS/opencode.sh"
+}
+
+setup() {
+    _common_setup
 }
 
 teardown() {

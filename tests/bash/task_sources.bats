@@ -3,10 +3,14 @@
 # Validates task normalization, priority sorting, PRD extraction,
 # and CLI-mocked integrations (beads, GitHub).
 
-setup() {
+setup_file() {
     load 'test_helper/common-setup'
-    _common_setup
+    _common_setup_file
     source "$RALPH_LIB/task_sources.sh"
+}
+
+setup() {
+    _common_setup
     _ORIG_DIR="$(pwd)"
     _ORIG_PATH="$PATH"
     _WORK_DIR="$(mktemp -d)"

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { findArtifactsDir, resolvePlanningSpecsSubpath } from "../../src/transition/artifacts.js";
@@ -66,6 +66,104 @@ describe("artifacts", () => {
       const result = await findArtifactsDir(testDir);
 
       expect(result).toBe(bmadPath);
+    });
+
+    it("config-specified path takes priority over candidates", async () => {
+      await mkdir(join(testDir, "_bmad"), { recursive: true });
+      await writeFile(join(testDir, "_bmad/config.yaml"), "planning_artifacts: my-custom-dir\n");
+      await mkdir(join(testDir, "my-custom-dir"), { recursive: true });
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+
+      const result = await findArtifactsDir(testDir);
+
+      expect(result).toBe(join(testDir, "my-custom-dir"));
+    });
+
+    it("falls back to candidates when config path doesn't exist", async () => {
+      await mkdir(join(testDir, "_bmad"), { recursive: true });
+      await writeFile(join(testDir, "_bmad/config.yaml"), "planning_artifacts: nonexistent-dir\n");
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+
+      const result = await findArtifactsDir(testDir);
+
+      expect(result).toBe(join(testDir, "_bmad-output/planning-artifacts"));
+    });
+
+    it("falls back to candidates when _bmad/config.yaml is missing", async () => {
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+
+      const result = await findArtifactsDir(testDir);
+
+      expect(result).toBe(join(testDir, "_bmad-output/planning-artifacts"));
+    });
+
+    it("blocks path traversal from config-specified path", async () => {
+      await mkdir(join(testDir, "_bmad"), { recursive: true });
+      await writeFile(join(testDir, "_bmad/config.yaml"), "planning_artifacts: ../../sensitive\n");
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+
+      const result = await findArtifactsDir(testDir);
+
+      expect(result).toBe(join(testDir, "_bmad-output/planning-artifacts"));
+    });
+
+    it("blocks sibling directory with matching prefix via path traversal", async () => {
+      const siblingDir = `${testDir}-evil`;
+      await mkdir(siblingDir, { recursive: true });
+      try {
+        await mkdir(join(testDir, "_bmad"), { recursive: true });
+        await writeFile(
+          join(testDir, "_bmad/config.yaml"),
+          `planning_artifacts: ../${testDir.split("/").pop()}-evil\n`
+        );
+        await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+
+        const result = await findArtifactsDir(testDir);
+
+        expect(result).toBe(join(testDir, "_bmad-output/planning-artifacts"));
+      } finally {
+        await rm(siblingDir, { recursive: true, force: true });
+      }
+    });
+
+    it("ignores whitespace-only planning_artifacts value", async () => {
+      await mkdir(join(testDir, "_bmad"), { recursive: true });
+      await writeFile(join(testDir, "_bmad/config.yaml"), "planning_artifacts: '   '\n");
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+
+      const result = await findArtifactsDir(testDir);
+
+      expect(result).toBe(join(testDir, "_bmad-output/planning-artifacts"));
+    });
+
+    it("falls back to candidates when config-specified path is a file", async () => {
+      await mkdir(join(testDir, "_bmad"), { recursive: true });
+      await writeFile(join(testDir, "_bmad/config.yaml"), "planning_artifacts: my-file.txt\n");
+      await writeFile(join(testDir, "my-file.txt"), "not a directory");
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+
+      const result = await findArtifactsDir(testDir);
+
+      expect(result).toBe(join(testDir, "_bmad-output/planning-artifacts"));
+    });
+
+    it("blocks absolute path outside project directory", async () => {
+      await mkdir(join(testDir, "_bmad"), { recursive: true });
+      await writeFile(join(testDir, "_bmad/config.yaml"), "planning_artifacts: /etc/passwd\n");
+      await mkdir(join(testDir, "_bmad-output/planning-artifacts"), { recursive: true });
+
+      const result = await findArtifactsDir(testDir);
+
+      expect(result).toBe(join(testDir, "_bmad-output/planning-artifacts"));
+    });
+
+    it("returns null when config path is invalid and no candidates exist", async () => {
+      await mkdir(join(testDir, "_bmad"), { recursive: true });
+      await writeFile(join(testDir, "_bmad/config.yaml"), "planning_artifacts: nonexistent-dir\n");
+
+      const result = await findArtifactsDir(testDir);
+
+      expect(result).toBeNull();
     });
   });
 

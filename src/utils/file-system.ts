@@ -17,6 +17,20 @@ export async function exists(path: string): Promise<boolean> {
 }
 
 /**
+ * Checks whether a directory exists at the given path.
+ * Returns false if the path doesn't exist or is a file.
+ */
+export async function isDirectory(path: string): Promise<boolean> {
+  try {
+    const stats = await stat(path);
+    return stats.isDirectory();
+  } catch (err) {
+    if (isEnoent(err)) return false;
+    throw err;
+  }
+}
+
+/**
  * Writes content to a file atomically using a temp file + rename.
  * Prevents partial writes from corrupting the target file.
  */

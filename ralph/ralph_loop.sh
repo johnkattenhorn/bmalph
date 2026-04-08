@@ -147,6 +147,8 @@ _env_REVIEW_INTERVAL="${REVIEW_INTERVAL:-}"
 _env_REVIEW_MODE="${REVIEW_MODE:-}"
 _env_WRITE_TIMEOUT_MINUTES="${WRITE_TIMEOUT_MINUTES:-}"
 _env_CB_READ_ONLY_TIMEOUT_THRESHOLD="${CB_READ_ONLY_TIMEOUT_THRESHOLD:-}"
+_env_SESSION_RESET_ON_EPIC="${SESSION_RESET_ON_EPIC:-}"
+_env_SESSION_RESET_INTERVAL="${SESSION_RESET_INTERVAL:-}"
 
 # Now set defaults (only if not already set by environment)
 MAX_CALLS_PER_HOUR="${MAX_CALLS_PER_HOUR:-100}"
@@ -172,6 +174,13 @@ RALPH_SESSION_HISTORY_FILE="$RALPH_DIR/.ralph_session_history"  # Session transi
 # Session expiration: 24 hours default balances project continuity with fresh context
 # Too short = frequent context loss; Too long = stale context causes unpredictable behavior
 CLAUDE_SESSION_EXPIRY_HOURS=${CLAUDE_SESSION_EXPIRY_HOURS:-24}
+
+# Smart context reset: reset session at epic boundaries and/or every N loops
+SESSION_RESET_ON_EPIC="${SESSION_RESET_ON_EPIC:-true}"
+SESSION_RESET_INTERVAL="${SESSION_RESET_INTERVAL:-8}"
+LOOPS_SINCE_RESET_FILE="$RALPH_DIR/.loops_since_reset"
+CURRENT_EPIC_FILE="$RALPH_DIR/.current_epic"
+CHECKPOINT_FILE="$RALPH_DIR/@loop_checkpoint.md"
 
 # Quality gates configuration
 TEST_COMMAND="${TEST_COMMAND:-}"
@@ -346,6 +355,8 @@ load_ralphrc() {
     [[ -n "$_env_REVIEW_MODE" ]] && REVIEW_MODE="$_env_REVIEW_MODE"
     [[ -n "$_env_WRITE_TIMEOUT_MINUTES" ]] && WRITE_TIMEOUT_MINUTES="$_env_WRITE_TIMEOUT_MINUTES"
     [[ -n "$_env_CB_READ_ONLY_TIMEOUT_THRESHOLD" ]] && CB_READ_ONLY_TIMEOUT_THRESHOLD="$_env_CB_READ_ONLY_TIMEOUT_THRESHOLD"
+    [[ -n "$_env_SESSION_RESET_ON_EPIC" ]] && SESSION_RESET_ON_EPIC="$_env_SESSION_RESET_ON_EPIC"
+    [[ -n "$_env_SESSION_RESET_INTERVAL" ]] && SESSION_RESET_INTERVAL="$_env_SESSION_RESET_INTERVAL"
 
     normalize_claude_permission_mode
     RALPHRC_FILE="$config_file"
@@ -1566,6 +1577,228 @@ capture_loop_diff_summary() {
     echo "$result" > "$summary_file"
 }
 
+# =============================================================================
+# SMART CONTEXT RESET — Epic boundary detection + interval safety valve
+# =============================================================================
+
+# Extract the current epic identifier from @fix_plan.md.
+# Looks at the first unchecked story's ID (e.g., "2.1") and returns the epic
+# number ("2"). Falls back to reading the most recent ### heading above the
+# first unchecked story.
+# Returns: epic identifier string, or empty if no unchecked stories exist.
+extract_current_epic() {
+    local fix_plan_file="${1:-$RALPH_DIR/@fix_plan.md}"
+    [[ -f "$fix_plan_file" ]] || return 0
+
+    # Try to get epic from the first unchecked story ID (e.g., "Story 2.1:" → "2")
+    local story_line
+    story_line=$(grep -m 1 -E "^[[:space:]]*- \[ \]" "$fix_plan_file" 2>/dev/null || true)
+    if [[ -n "$story_line" ]]; then
+        # Extract story ID: "- [ ] Story 2.1: Title" → "2"
+        local story_id
+        story_id=$(echo "$story_line" | sed -n 's/.*Story[[:space:]]*\([0-9]*\)\..*/\1/p')
+        if [[ -n "$story_id" ]]; then
+            printf '%s' "$story_id"
+            return 0
+        fi
+    fi
+
+    # Fallback: find the ### heading above the first unchecked story
+    local epic_heading=""
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^###[[:space:]] ]]; then
+            epic_heading="${line### }"
+            epic_heading="${epic_heading#"${epic_heading%%[![:space:]]*}"}"
+        fi
+        if [[ "$line" =~ ^[[:space:]]*-\ \[\ \] ]]; then
+            break
+        fi
+    done < "$fix_plan_file"
+
+    printf '%s' "$epic_heading"
+}
+
+# Detect whether the current epic has changed since the last loop.
+# Updates .current_epic and returns 0 (true) if an epic boundary was crossed.
+# Returns 1 (false) if same epic or first loop.
+detect_epic_boundary() {
+    local fix_plan_file="${1:-$RALPH_DIR/@fix_plan.md}"
+
+    local current_epic
+    current_epic=$(extract_current_epic "$fix_plan_file")
+    [[ -z "$current_epic" ]] && return 1
+
+    local previous_epic=""
+    if [[ -f "$CURRENT_EPIC_FILE" ]]; then
+        previous_epic=$(cat "$CURRENT_EPIC_FILE" 2>/dev/null || true)
+    fi
+
+    # Update tracking file
+    printf '%s' "$current_epic" > "$CURRENT_EPIC_FILE"
+
+    # First loop — no previous epic to compare against
+    [[ -z "$previous_epic" ]] && return 1
+
+    # Same epic — no boundary
+    [[ "$current_epic" == "$previous_epic" ]] && return 1
+
+    # Epic changed — boundary crossed
+    return 0
+}
+
+# Write a structured checkpoint file summarizing loop state.
+# This file is read by build_loop_context() when starting a fresh session
+# to provide rich context without carrying the full conversation history.
+# Args: $1 = loop_count, $2 = reset_reason (epic_boundary|interval|manual)
+write_loop_checkpoint() {
+    local loop_count=${1:-0}
+    local reset_reason=${2:-unknown}
+
+    local completed_tasks=0
+    local incomplete_tasks=0
+    local total_tasks=0
+    read -r completed_tasks incomplete_tasks total_tasks < <(count_fix_plan_checkboxes "$RALPH_DIR/@fix_plan.md")
+
+    # Get current epic
+    local current_epic=""
+    if [[ -f "$CURRENT_EPIC_FILE" ]]; then
+        current_epic=$(cat "$CURRENT_EPIC_FILE" 2>/dev/null || true)
+    fi
+
+    # Get next task
+    local next_task=""
+    next_task=$(extract_next_fix_plan_task "$RALPH_DIR/@fix_plan.md")
+
+    # Get recent git changes (last 10 commits)
+    local recent_commits=""
+    if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
+        recent_commits=$(git log --oneline -10 2>/dev/null || true)
+    fi
+
+    # Get files modified in recent commits
+    local recent_files=""
+    if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
+        recent_files=$(git diff --name-only HEAD~5 HEAD 2>/dev/null | head -20 || true)
+    fi
+
+    # Get previous loop summary
+    local prev_summary=""
+    if [[ -f "$RESPONSE_ANALYSIS_FILE" ]]; then
+        prev_summary=$(jq -r '.analysis.work_summary // ""' "$RESPONSE_ANALYSIS_FILE" 2>/dev/null | head -c 500)
+        [[ "$prev_summary" == "null" ]] && prev_summary=""
+    fi
+
+    # Get test/quality gate status
+    local test_status="unknown"
+    if [[ -f "$QUALITY_GATE_RESULTS_FILE" ]]; then
+        test_status=$(jq -r '.overall_status // "unknown"' "$QUALITY_GATE_RESULTS_FILE" 2>/dev/null || echo "unknown")
+    fi
+
+    # Get circuit breaker state
+    local cb_state="CLOSED"
+    if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
+        cb_state=$(jq -r '.state // "CLOSED"' "$RALPH_DIR/.circuit_breaker_state" 2>/dev/null || echo "CLOSED")
+    fi
+
+    # Write checkpoint
+    cat > "$CHECKPOINT_FILE" <<CHECKPOINT_EOF
+# Loop Checkpoint
+**Loop:** $loop_count | **Reset:** $reset_reason | **Time:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+## Progress
+- Completed: $completed_tasks / $total_tasks stories
+- Remaining: $incomplete_tasks stories
+- Current epic: ${current_epic:-unknown}
+- Quality gates: $test_status
+- Circuit breaker: $cb_state
+
+## Next Task
+${next_task:-No unchecked tasks remaining}
+
+## Last Work Summary
+${prev_summary:-No previous summary available}
+
+## Recently Modified Files
+${recent_files:-No recent file changes}
+
+## Recent Commits
+${recent_commits:-No recent commits}
+CHECKPOINT_EOF
+
+    log_status "INFO" "Wrote checkpoint: $reset_reason (loop $loop_count, $completed_tasks/$total_tasks done)"
+}
+
+# Build a rich context string from the checkpoint file for fresh sessions.
+# Returns a context string up to ~2000 chars (vs 500 for normal loop context).
+build_checkpoint_context() {
+    [[ -f "$CHECKPOINT_FILE" ]] || return 0
+
+    local checkpoint
+    checkpoint=$(head -c 2000 "$CHECKPOINT_FILE" 2>/dev/null || true)
+    [[ -z "$checkpoint" ]] && return 0
+
+    printf 'CONTEXT RESET — starting fresh session. Previous progress:\n%s' "$checkpoint"
+}
+
+# Check if a smart context reset is needed and perform it.
+# Called at the top of each loop iteration, before building loop context.
+# Sets SMART_RESET_TRIGGERED=true if a reset occurred, so the caller
+# can skip session resume and use checkpoint context instead.
+# Args: $1 = loop_count
+check_smart_context_reset() {
+    local loop_count=$1
+    SMART_RESET_TRIGGERED=false
+
+    # Only applies when session continuity is enabled
+    [[ "$CLAUDE_USE_CONTINUE" != "true" ]] && return 0
+
+    local reset_reason=""
+
+    # Check 1: Epic boundary
+    if [[ "$SESSION_RESET_ON_EPIC" == "true" ]]; then
+        if detect_epic_boundary "$RALPH_DIR/@fix_plan.md"; then
+            reset_reason="epic_boundary"
+            log_status "INFO" "🔄 Epic boundary detected — resetting session context"
+        fi
+    fi
+
+    # Check 2: Interval safety valve (only if epic boundary didn't trigger)
+    if [[ -z "$reset_reason" && "$SESSION_RESET_INTERVAL" -gt 0 ]]; then
+        local loops_since=0
+        if [[ -f "$LOOPS_SINCE_RESET_FILE" ]]; then
+            loops_since=$(cat "$LOOPS_SINCE_RESET_FILE" 2>/dev/null || echo "0")
+            [[ ! "$loops_since" =~ ^[0-9]+$ ]] && loops_since=0
+        fi
+
+        if [[ $loops_since -ge $SESSION_RESET_INTERVAL ]]; then
+            reset_reason="interval"
+            log_status "INFO" "🔄 Session reset interval ($SESSION_RESET_INTERVAL loops) reached — resetting session context"
+        fi
+    fi
+
+    if [[ -n "$reset_reason" ]]; then
+        # Write checkpoint before resetting
+        write_loop_checkpoint "$loop_count" "$reset_reason"
+
+        # Expire the session so a fresh one starts
+        rm -f "$CLAUDE_SESSION_FILE"
+        log_status "INFO" "Session expired for smart context reset"
+
+        # Reset the interval counter
+        echo "0" > "$LOOPS_SINCE_RESET_FILE"
+
+        SMART_RESET_TRIGGERED=true
+    else
+        # Increment loops-since-reset counter
+        local loops_since=0
+        if [[ -f "$LOOPS_SINCE_RESET_FILE" ]]; then
+            loops_since=$(cat "$LOOPS_SINCE_RESET_FILE" 2>/dev/null || echo "0")
+            [[ ! "$loops_since" =~ ^[0-9]+$ ]] && loops_since=0
+        fi
+        echo "$((loops_since + 1))" > "$LOOPS_SINCE_RESET_FILE"
+    fi
+}
+
 # Check if a code review should run this iteration
 # Returns 0 (true) when review is due, 1 (false) otherwise
 # Args: $1 = loop_count, $2 = fix_plan_completed_delta (optional, for ultimate mode)
@@ -2260,6 +2493,9 @@ execute_claude_code() {
     local timeout_seconds=$((CLAUDE_TIMEOUT_MINUTES * 60))
     log_status "INFO" "⏳ Starting $DRIVER_DISPLAY_NAME execution... (timeout: ${CLAUDE_TIMEOUT_MINUTES}m)"
 
+    # Smart context reset: check for epic boundary or interval before session init
+    check_smart_context_reset "$loop_count"
+
     # Initialize or resume session (must happen before build_loop_context
     # so the session_id can gate the "session continued" signal)
     local session_id=""
@@ -2270,7 +2506,15 @@ execute_claude_code() {
     # Build loop context for session continuity
     local loop_context=""
     if [[ "$CLAUDE_USE_CONTINUE" == "true" ]]; then
-        loop_context=$(build_loop_context "$loop_count" "$session_id")
+        if [[ "$SMART_RESET_TRIGGERED" == "true" && -z "$session_id" ]]; then
+            # Smart reset occurred — use rich checkpoint context instead of normal context
+            loop_context=$(build_checkpoint_context)
+            if [[ -n "$loop_context" ]]; then
+                log_status "INFO" "Using checkpoint context for fresh session"
+            fi
+        else
+            loop_context=$(build_loop_context "$loop_count" "$session_id")
+        fi
         if [[ -n "$loop_context" && "$VERBOSE_PROGRESS" == "true" ]]; then
             log_status "INFO" "Loop context: $loop_context"
         fi

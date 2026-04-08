@@ -428,6 +428,32 @@ Cursor-specific runtime checks:
 
 Run `bmalph run` to start the loop with a live dashboard, or `bmalph run --no-dashboard` for headless mode. Press `Ctrl+C` to stop the loop at any time.
 
+### Smart Context Management
+
+With `SESSION_CONTINUITY=true` (the default), Ralph resumes the same AI session across loops to carry context forward. This works well for short runs but can degrade code quality during long implementations as the context window fills with stale reasoning.
+
+Smart context management automatically resets the session at natural boundaries while preserving enough context for the fresh session to start quickly:
+
+- **Epic-boundary reset** (`SESSION_RESET_ON_EPIC=true`, default) — when Ralph finishes the last story in an epic and moves to the next, it writes a structured checkpoint and starts a fresh session. Stories within the same epic stay in one session since they share domain context.
+- **Interval safety valve** (`SESSION_RESET_INTERVAL=8`, default) — forces a fresh session every N loops within the same epic, preventing context degradation in large epics with many stories.
+- **Rich checkpoints** — on every reset, Ralph writes `@loop_checkpoint.md` with progress summary, recently modified files, recent commits, test status, and the next task. The fresh session receives this as system context, avoiding the slow re-orientation that happens with a completely blank start.
+
+Configure in `.ralph/.ralphrc`:
+
+```bash
+# Reset at epic boundaries (recommended, default: true)
+SESSION_RESET_ON_EPIC=true
+
+# Safety valve: fresh session every N loops within an epic (0 = disabled)
+SESSION_RESET_INTERVAL=8
+
+# To disable smart resets and use the original behavior:
+SESSION_RESET_ON_EPIC=false
+SESSION_RESET_INTERVAL=0
+```
+
+The checkpoint file (`.ralph/@loop_checkpoint.md`) is automatically written on each reset and consumed on the next loop start. It replaces the 500-character context summary with a ~2000-character structured briefing.
+
 ### Swarm Mode (Parallel Workers)
 
 `bmalph run --swarm [N]` spawns N Ralph loops in isolated git worktrees, each working on different epics simultaneously. Stories are partitioned by epic using greedy bin-packing for balanced distribution.
@@ -541,6 +567,41 @@ Then remove the bmalph-managed sections from your instructions file. The file de
 - **Aider** — remove bmalph sections from `CONVENTIONS.md`
 
 See the [Supported Platforms](#supported-platforms) table for details. After manual removal, run `bmalph init` to reinitialize.
+
+### Installing from Fork (Development)
+
+To use this fork instead of the npm release (e.g. to get smart context management before it lands upstream):
+
+```bash
+# 1. Remove the npm version if installed
+npm uninstall -g bmalph
+
+# 2. Clone the fork
+git clone https://github.com/johnkattenhorn/bmalph.git ~/Code/bmalph
+
+# 3. Install dependencies, build, and link globally
+cd ~/Code/bmalph
+npm install
+npm run build
+npm link
+
+# 4. Verify
+bmalph --version
+
+# 5. Upgrade an existing project to pick up new features
+cd ~/path/to/your-project
+bmalph upgrade
+```
+
+`npm link` creates a global symlink, so pulling updates is just:
+
+```bash
+cd ~/Code/bmalph
+git pull
+npm run build
+```
+
+No reinstall needed — the linked binary picks up changes immediately after build.
 
 ## Quick Examples
 

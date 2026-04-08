@@ -74,6 +74,17 @@ SESSION_CONTINUITY=true
 # Session expiration time in hours (start fresh after this time)
 SESSION_EXPIRY_HOURS=24
 
+# Smart context reset: start a fresh session at epic boundaries.
+# When the current story belongs to a different epic than the previous loop,
+# Ralph writes a checkpoint and starts a new session. This prevents context
+# degradation while keeping related stories in the same session.
+SESSION_RESET_ON_EPIC=true
+
+# Safety-valve: force a fresh session every N loops within the same epic.
+# Prevents context degradation in large epics with many stories.
+# Set to 0 to disable interval-based resets (rely on epic boundaries only).
+SESSION_RESET_INTERVAL=8
+
 # =============================================================================
 # TASK SOURCES
 # =============================================================================

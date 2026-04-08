@@ -91,7 +91,17 @@ setup() {
     QUALITY_GATE_ON_COMPLETION_ONLY="false"
     QUALITY_GATE_RESULTS_FILE="$RALPH_DIR/.quality_gate_results"
 
-    unset ALLOWED_TOOLS SESSION_CONTINUITY SESSION_EXPIRY_HOURS RALPH_VERBOSE
+    # Smart context reset defaults
+    SESSION_RESET_ON_EPIC="true"
+    SESSION_RESET_INTERVAL=8
+    LOOPS_SINCE_RESET_FILE="$RALPH_DIR/.loops_since_reset"
+    CURRENT_EPIC_FILE="$RALPH_DIR/.current_epic"
+    CHECKPOINT_FILE="$RALPH_DIR/@loop_checkpoint.md"
+    SMART_RESET_TRIGGERED=false
+    _env_SESSION_RESET_ON_EPIC=""
+    _env_SESSION_RESET_INTERVAL=""
+
+    unset ALLOWED_TOOLS SESSION_CONTINUITY SESSION_EXPIRY_HOURS RALPH_VERBOSE SESSION_RESET_ON_EPIC SESSION_RESET_INTERVAL
     _cli_MAX_CALLS_PER_HOUR=""
     _cli_CLAUDE_TIMEOUT_MINUTES=""
     _cli_CLAUDE_OUTPUT_FORMAT=""
@@ -3160,4 +3170,248 @@ _setup_diff_test_repo() {
     actual=$(jq '.driver_exit_code' "$STATUS_FILE")
     set -e
     [[ "$actual" == "null" ]]
+}
+
+# ===========================================================================
+# Smart Context Reset — extract_current_epic
+# ===========================================================================
+
+@test "extract_current_epic returns epic number from first unchecked story" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+### Epic 1: User Authentication
+- [x] Story 1.1: Setup login page
+- [x] Story 1.2: Add OAuth support
+
+### Epic 2: Dashboard
+- [ ] Story 2.1: Build dashboard layout
+- [ ] Story 2.2: Add charts
+EOF
+    run extract_current_epic "$RALPH_DIR/@fix_plan.md"
+    assert_success
+    assert_output "2"
+}
+
+@test "extract_current_epic returns first epic when no stories completed" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+### Epic 1: User Authentication
+- [ ] Story 1.1: Setup login page
+- [ ] Story 1.2: Add OAuth support
+EOF
+    run extract_current_epic "$RALPH_DIR/@fix_plan.md"
+    assert_success
+    assert_output "1"
+}
+
+@test "extract_current_epic returns empty when all stories completed" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+### Epic 1: User Authentication
+- [x] Story 1.1: Setup login page
+- [X] Story 1.2: Add OAuth support
+EOF
+    run extract_current_epic "$RALPH_DIR/@fix_plan.md"
+    assert_success
+    assert_output ""
+}
+
+@test "extract_current_epic returns empty when fix plan missing" {
+    rm -f "$RALPH_DIR/@fix_plan.md"
+    run extract_current_epic "$RALPH_DIR/@fix_plan.md"
+    assert_success
+    assert_output ""
+}
+
+@test "extract_current_epic handles indented checkboxes" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+### Epic 3: API Layer
+  - [ ] Story 3.1: REST endpoints
+  - [ ] Story 3.2: GraphQL schema
+EOF
+    run extract_current_epic "$RALPH_DIR/@fix_plan.md"
+    assert_success
+    assert_output "3"
+}
+
+# ===========================================================================
+# Smart Context Reset — detect_epic_boundary
+# ===========================================================================
+
+@test "detect_epic_boundary returns false on first loop (no previous epic)" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [ ] Story 1.1: First story
+EOF
+    rm -f "$CURRENT_EPIC_FILE"
+    run detect_epic_boundary "$RALPH_DIR/@fix_plan.md"
+    assert_failure  # returns 1 = no boundary
+}
+
+@test "detect_epic_boundary returns false when same epic" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [ ] Story 1.2: Second story in epic 1
+EOF
+    echo "1" > "$CURRENT_EPIC_FILE"
+    run detect_epic_boundary "$RALPH_DIR/@fix_plan.md"
+    assert_failure  # returns 1 = same epic
+}
+
+@test "detect_epic_boundary returns true when epic changes" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [x] Story 1.1: Done
+- [ ] Story 2.1: First story in epic 2
+EOF
+    echo "1" > "$CURRENT_EPIC_FILE"
+    run detect_epic_boundary "$RALPH_DIR/@fix_plan.md"
+    assert_success  # returns 0 = boundary detected
+}
+
+@test "detect_epic_boundary updates current epic file" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [ ] Story 2.1: Dashboard layout
+EOF
+    echo "1" > "$CURRENT_EPIC_FILE"
+    detect_epic_boundary "$RALPH_DIR/@fix_plan.md" || true
+    [[ "$(cat "$CURRENT_EPIC_FILE")" == "2" ]]
+}
+
+# ===========================================================================
+# Smart Context Reset — write_loop_checkpoint
+# ===========================================================================
+
+@test "write_loop_checkpoint creates checkpoint file" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [x] Story 1.1: Setup
+- [ ] Story 1.2: Build feature
+- [ ] Story 1.3: Add tests
+EOF
+    echo "1" > "$CURRENT_EPIC_FILE"
+
+    write_loop_checkpoint 5 "epic_boundary"
+
+    [[ -f "$CHECKPOINT_FILE" ]]
+    grep -q "Loop: 5" "$CHECKPOINT_FILE"
+    grep -q "Reset: epic_boundary" "$CHECKPOINT_FILE"
+    grep -q "Completed: 1 / 3" "$CHECKPOINT_FILE"
+    grep -q "Remaining: 2" "$CHECKPOINT_FILE"
+}
+
+@test "write_loop_checkpoint includes next task" {
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [x] Story 1.1: Done
+- [ ] Story 2.1: Build dashboard layout
+EOF
+
+    write_loop_checkpoint 3 "interval"
+
+    grep -q "Story 2.1" "$CHECKPOINT_FILE"
+}
+
+# ===========================================================================
+# Smart Context Reset — build_checkpoint_context
+# ===========================================================================
+
+@test "build_checkpoint_context returns empty when no checkpoint exists" {
+    rm -f "$CHECKPOINT_FILE"
+    run build_checkpoint_context
+    assert_success
+    assert_output ""
+}
+
+@test "build_checkpoint_context returns context from checkpoint file" {
+    cat > "$CHECKPOINT_FILE" << 'EOF'
+# Loop Checkpoint
+**Loop:** 5 | **Reset:** epic_boundary
+
+## Progress
+- Completed: 3 / 5 stories
+EOF
+    run build_checkpoint_context
+    assert_success
+    assert_output --partial "CONTEXT RESET"
+    assert_output --partial "Completed: 3 / 5"
+}
+
+# ===========================================================================
+# Smart Context Reset — check_smart_context_reset
+# ===========================================================================
+
+@test "check_smart_context_reset does nothing when session continuity disabled" {
+    CLAUDE_USE_CONTINUE="false"
+    check_smart_context_reset 5
+    [[ "$SMART_RESET_TRIGGERED" == "false" ]]
+}
+
+@test "check_smart_context_reset triggers on epic boundary" {
+    CLAUDE_USE_CONTINUE="true"
+    SESSION_RESET_ON_EPIC="true"
+    SESSION_RESET_INTERVAL=0
+    CLAUDE_SESSION_FILE="$RALPH_DIR/.claude_session_id"
+    echo "sess-123" > "$CLAUDE_SESSION_FILE"
+
+    # Previous epic was 1, current is 2
+    echo "1" > "$CURRENT_EPIC_FILE"
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [x] Story 1.1: Done
+- [ ] Story 2.1: New epic
+EOF
+
+    check_smart_context_reset 5
+
+    [[ "$SMART_RESET_TRIGGERED" == "true" ]]
+    [[ ! -f "$CLAUDE_SESSION_FILE" ]]  # session expired
+    [[ -f "$CHECKPOINT_FILE" ]]          # checkpoint written
+    [[ "$(cat "$LOOPS_SINCE_RESET_FILE")" == "0" ]]  # counter reset
+}
+
+@test "check_smart_context_reset triggers on interval" {
+    CLAUDE_USE_CONTINUE="true"
+    SESSION_RESET_ON_EPIC="false"
+    SESSION_RESET_INTERVAL=3
+    CLAUDE_SESSION_FILE="$RALPH_DIR/.claude_session_id"
+    echo "sess-123" > "$CLAUDE_SESSION_FILE"
+
+    # 3 loops since last reset = should trigger
+    echo "3" > "$LOOPS_SINCE_RESET_FILE"
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [ ] Story 1.1: Still working
+EOF
+
+    check_smart_context_reset 10
+
+    [[ "$SMART_RESET_TRIGGERED" == "true" ]]
+    [[ ! -f "$CLAUDE_SESSION_FILE" ]]
+    [[ -f "$CHECKPOINT_FILE" ]]
+}
+
+@test "check_smart_context_reset increments counter when no reset needed" {
+    CLAUDE_USE_CONTINUE="true"
+    SESSION_RESET_ON_EPIC="false"
+    SESSION_RESET_INTERVAL=5
+
+    echo "2" > "$LOOPS_SINCE_RESET_FILE"
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [ ] Story 1.1: Still working
+EOF
+
+    check_smart_context_reset 3
+
+    [[ "$SMART_RESET_TRIGGERED" == "false" ]]
+    [[ "$(cat "$LOOPS_SINCE_RESET_FILE")" == "3" ]]
+}
+
+@test "check_smart_context_reset epic boundary takes priority over interval" {
+    CLAUDE_USE_CONTINUE="true"
+    SESSION_RESET_ON_EPIC="true"
+    SESSION_RESET_INTERVAL=10
+    CLAUDE_SESSION_FILE="$RALPH_DIR/.claude_session_id"
+    echo "sess-123" > "$CLAUDE_SESSION_FILE"
+
+    echo "1" > "$CURRENT_EPIC_FILE"
+    echo "2" > "$LOOPS_SINCE_RESET_FILE"  # well under interval of 10
+    cat > "$RALPH_DIR/@fix_plan.md" << 'EOF'
+- [ ] Story 2.1: New epic
+EOF
+
+    check_smart_context_reset 5
+
+    [[ "$SMART_RESET_TRIGGERED" == "true" ]]
+    grep -q "epic_boundary" "$CHECKPOINT_FILE"
 }

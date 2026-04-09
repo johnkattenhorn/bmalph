@@ -31,6 +31,11 @@ export async function runCommand(options: RunCommandOptions): Promise<void> {
 }
 
 async function executeRun(options: RunCommandOptions): Promise<void> {
+  // Clear terminal for a fresh start — avoids confusing overlap from previous runs
+  if (process.stdout.isTTY) {
+    process.stdout.write("\x1B[2J\x1B[0f");
+  }
+
   const { projectDir, dashboard } = options;
 
   const config = await readConfig(projectDir);

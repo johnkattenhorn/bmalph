@@ -98,6 +98,12 @@ driver_supports_live_output() {
     return 1  # false
 }
 
+# Copilot CLI does not support --append-system-prompt.
+# Extra context is prepended into the -p prompt argument instead.
+driver_supports_append_system_prompt() {
+    return 1  # false
+}
+
 # Copilot CLI outputs plain text only (no JSON streaming).
 # Passthrough filter — no transformation needed.
 driver_stream_filter() {

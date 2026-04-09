@@ -139,6 +139,11 @@ driver_supports_sessions() {
     return 0  # true
 }
 
+# Claude Code supports --append-system-prompt for extra loop context.
+driver_supports_append_system_prompt() {
+    return 0  # true
+}
+
 # Claude Code supports stream-json live output.
 driver_supports_live_output() {
     return 0  # true

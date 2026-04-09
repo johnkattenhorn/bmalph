@@ -2557,7 +2557,21 @@ execute_claude_code() {
             rm -f "$RALPH_DIR/.write_heartbeat_triggered"
         fi
         if [[ -n "$extra_system_prompt" ]]; then
-            CLAUDE_CMD_ARGS+=("--append-system-prompt" "$extra_system_prompt")
+            if type driver_supports_append_system_prompt &>/dev/null && driver_supports_append_system_prompt; then
+                CLAUDE_CMD_ARGS+=("--append-system-prompt" "$extra_system_prompt")
+            else
+                # Driver doesn't support --append-system-prompt (e.g. Copilot CLI).
+                # Prepend context into the existing -p prompt argument.
+                for i in "${!CLAUDE_CMD_ARGS[@]}"; do
+                    if [[ "${CLAUDE_CMD_ARGS[$i]}" == "-p" ]]; then
+                        local pi=$((i + 1))
+                        CLAUDE_CMD_ARGS[$pi]="${extra_system_prompt}
+
+${CLAUDE_CMD_ARGS[$pi]}"
+                        break
+                    fi
+                done
+            fi
         fi
     else
         log_status "WARN" "Failed to build modern CLI command, falling back to legacy mode"
@@ -2579,7 +2593,7 @@ execute_claude_code() {
         #
         # Uses CLAUDE_CMD_ARGS from build_claude_command() to preserve:
         # - --allowedTools (tool permissions)
-        # - --append-system-prompt (loop context)
+        # - --append-system-prompt (loop context, Claude Code only; others use -p prepend)
         # - --continue (session continuity)
         # - -p (prompt content)
 

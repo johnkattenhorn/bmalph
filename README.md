@@ -282,7 +282,7 @@ BMAD (add Epic 2) → bmalph implement → Ralph sees changes + picks up Epic 2
 | Flag                  | Description                                                                              |
 | --------------------- | ---------------------------------------------------------------------------------------- |
 | `--driver <platform>` | Override platform driver (claude-code, codex, opencode, copilot, cursor)                 |
-| `--review [mode]`     | Quality review: `enhanced` (every 5 loops) or `ultimate` (every story). Claude Code only |
+| `--review [mode]`     | Quality review: `enhanced` (every 5 loops) or `ultimate` (every story)                   |
 | `--interval <ms>`     | Dashboard refresh interval in milliseconds (default: 2000)                               |
 | `--no-dashboard`      | Run Ralph without the dashboard overlay                                                  |
 | `--swarm [count]`     | Run N parallel workers in git worktrees (default: 2, max: 6). Requires >= 2 epics        |
@@ -417,7 +417,7 @@ Safety mechanisms:
 
 - **Circuit breaker** — prevents infinite loops on failing stories
 - **Response analyzer** — detects stuck or repeating outputs
-- **Code review** — optional quality review (`--review [mode]`, Claude Code only). Enhanced: periodic review every 5 loops. Ultimate: review after every completed story. A read-only session analyzes git diffs and feeds structured findings into the next implementation loop
+- **Code review** — optional quality review (`--review [mode]`). Enhanced: periodic review every 5 loops. Ultimate: review after every completed story. A read-only session analyzes git diffs and feeds structured findings into the next implementation loop. Set `REVIEW_MODEL` in `.ralphrc` to use a different model for reviews (e.g., `gpt-5.3-codex` for a fresh perspective when using Claude for implementation)
 - **Completion** — loop exits when all `@fix_plan.md` items are checked off
 
 Cursor-specific runtime checks:
@@ -453,6 +453,35 @@ SESSION_RESET_INTERVAL=0
 ```
 
 The checkpoint file (`.ralph/@loop_checkpoint.md`) is automatically written on each reset and consumed on the next loop start. It replaces the 500-character context summary with a ~2000-character structured briefing.
+
+### Code Review Configuration
+
+Ralph can run periodic adversarial code reviews between implementation loops. A read-only session analyzes git diffs and feeds structured findings back into the next loop.
+
+Configure in `.ralph/.ralphrc`:
+
+```bash
+# Review mode: off (default), enhanced (every N loops), ultimate (every story)
+REVIEW_MODE=enhanced
+
+# How often to review in enhanced mode (default: 5)
+REVIEW_INTERVAL=5
+
+# Optional: use a different model for reviews (any model supported by your driver)
+# This gives a "fresh eyes" perspective — e.g., use Codex for review when Claude
+# is your implementation model, or vice versa.
+REVIEW_MODEL=gpt-5.3-codex
+```
+
+| Key               | Values                          | Default | Description                                        |
+| ----------------- | ------------------------------- | ------- | -------------------------------------------------- |
+| `REVIEW_MODE`     | `off`, `enhanced`, `ultimate`   | `off`   | Review cadence                                     |
+| `REVIEW_INTERVAL` | integer                         | `5`     | Loops between reviews (enhanced mode only)         |
+| `REVIEW_MODEL`    | any model ID or empty           | (empty) | Model override for review sessions                 |
+
+When `REVIEW_MODEL` is set, Ralph appends `--model <value>` to the CLI invocation for review loops only. Implementation loops continue using the driver's default model. This works with all drivers that support `--model` (copilot, codex, claude-code).
+
+**Note:** When setting values in `.ralphrc`, use plain `KEY=VALUE` syntax for values you want to change from defaults. The `${VAR:-default}` form is for allowing environment variable overrides — it will not override the script's built-in defaults.
 
 ### Swarm Mode (Parallel Workers)
 

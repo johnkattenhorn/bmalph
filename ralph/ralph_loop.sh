@@ -40,7 +40,7 @@ source "$SCRIPT_DIR/lib/metrics.sh"
 
 # Allowlist of known .ralphrc config keys (#76)
 # Space-delimited string (avoids declare -A scoping issues when sourced)
-RALPHRC_ALLOWED_KEYS=" PLATFORM_DRIVER PROJECT_NAME PROJECT_TYPE MAX_CALLS_PER_HOUR CLAUDE_TIMEOUT_MINUTES CLAUDE_OUTPUT_FORMAT WRITE_TIMEOUT_MINUTES ALLOWED_TOOLS CLAUDE_PERMISSION_MODE PERMISSION_DENIAL_MODE SESSION_CONTINUITY SESSION_EXPIRY_HOURS TASK_SOURCES GITHUB_TASK_LABEL BEADS_FILTER CB_NO_PROGRESS_THRESHOLD CB_SAME_ERROR_THRESHOLD CB_OUTPUT_DECLINE_THRESHOLD CB_READ_ONLY_TIMEOUT_THRESHOLD CB_COOLDOWN_MINUTES CB_AUTO_RESET TEST_COMMAND QUALITY_GATES QUALITY_GATE_MODE QUALITY_GATE_TIMEOUT QUALITY_GATE_ON_COMPLETION_ONLY REVIEW_MODE REVIEW_ENABLED REVIEW_INTERVAL CLAUDE_MIN_VERSION RALPH_VERBOSE PROMPT_FILE FIX_PLAN_FILE AGENT_FILE "
+RALPHRC_ALLOWED_KEYS=" PLATFORM_DRIVER PROJECT_NAME PROJECT_TYPE MAX_CALLS_PER_HOUR CLAUDE_TIMEOUT_MINUTES CLAUDE_OUTPUT_FORMAT WRITE_TIMEOUT_MINUTES ALLOWED_TOOLS CLAUDE_PERMISSION_MODE PERMISSION_DENIAL_MODE SESSION_CONTINUITY SESSION_EXPIRY_HOURS TASK_SOURCES GITHUB_TASK_LABEL BEADS_FILTER CB_NO_PROGRESS_THRESHOLD CB_SAME_ERROR_THRESHOLD CB_OUTPUT_DECLINE_THRESHOLD CB_READ_ONLY_TIMEOUT_THRESHOLD CB_COOLDOWN_MINUTES CB_AUTO_RESET TEST_COMMAND QUALITY_GATES QUALITY_GATE_MODE QUALITY_GATE_TIMEOUT QUALITY_GATE_ON_COMPLETION_ONLY REVIEW_MODE REVIEW_ENABLED REVIEW_INTERVAL REVIEW_MODEL CLAUDE_MIN_VERSION RALPH_VERBOSE PROMPT_FILE FIX_PLAN_FILE AGENT_FILE "
 
 # parse_ralphrc - Safely parse .ralphrc as key=value config (#76)
 # Rejects command substitution ($(), backticks). Only sets allowlisted keys.
@@ -145,6 +145,7 @@ _env_QUALITY_GATE_ON_COMPLETION_ONLY="${QUALITY_GATE_ON_COMPLETION_ONLY:-}"
 _env_REVIEW_ENABLED="${REVIEW_ENABLED:-}"
 _env_REVIEW_INTERVAL="${REVIEW_INTERVAL:-}"
 _env_REVIEW_MODE="${REVIEW_MODE:-}"
+_env_REVIEW_MODEL="${REVIEW_MODEL:-}"
 _env_WRITE_TIMEOUT_MINUTES="${WRITE_TIMEOUT_MINUTES:-}"
 _env_CB_READ_ONLY_TIMEOUT_THRESHOLD="${CB_READ_ONLY_TIMEOUT_THRESHOLD:-}"
 _env_SESSION_RESET_ON_EPIC="${SESSION_RESET_ON_EPIC:-}"
@@ -201,6 +202,10 @@ REVIEW_LAST_SHA_FILE="$RALPH_DIR/.review_last_sha"
 # This ensures backwards compat: old .ralphrc files with only REVIEW_ENABLED=true
 # still map to enhanced mode. Env vars always win via the snapshot/restore mechanism.
 REVIEW_MODE="${REVIEW_MODE:-off}"
+
+# Optional model override for review loops (e.g., "gpt-5.3-codex").
+# When set, injects --model into the review CLI invocation for a fresh perspective.
+REVIEW_MODEL="${REVIEW_MODEL:-}"
 
 # Valid tool patterns for --allowed-tools validation
 # Default: Claude Code tools. Platform driver overwrites via driver_valid_tools() in main().
@@ -353,6 +358,7 @@ load_ralphrc() {
     [[ -n "$_env_REVIEW_ENABLED" ]] && REVIEW_ENABLED="$_env_REVIEW_ENABLED"
     [[ -n "$_env_REVIEW_INTERVAL" ]] && REVIEW_INTERVAL="$_env_REVIEW_INTERVAL"
     [[ -n "$_env_REVIEW_MODE" ]] && REVIEW_MODE="$_env_REVIEW_MODE"
+    [[ -n "$_env_REVIEW_MODEL" ]] && REVIEW_MODEL="$_env_REVIEW_MODEL"
     [[ -n "$_env_WRITE_TIMEOUT_MINUTES" ]] && WRITE_TIMEOUT_MINUTES="$_env_WRITE_TIMEOUT_MINUTES"
     [[ -n "$_env_CB_READ_ONLY_TIMEOUT_THRESHOLD" ]] && CB_READ_ONLY_TIMEOUT_THRESHOLD="$_env_CB_READ_ONLY_TIMEOUT_THRESHOLD"
     [[ -n "$_env_SESSION_RESET_ON_EPIC" ]] && SESSION_RESET_ON_EPIC="$_env_SESSION_RESET_ON_EPIC"
@@ -1928,6 +1934,11 @@ run_review_loop() {
 
     # Build command with review prompt and NO session resume (ephemeral)
     if driver_build_command "$REVIEW_PROMPT_FILE" "$review_context" ""; then
+        # Inject model override for review if configured
+        if [[ -n "$REVIEW_MODEL" ]]; then
+            CLAUDE_CMD_ARGS+=("--model" "$REVIEW_MODEL")
+            log_status "INFO" "Review using model override: $REVIEW_MODEL"
+        fi
         # Execute review (capture output)
         portable_timeout "${timeout_seconds}s" "${CLAUDE_CMD_ARGS[@]}" \
             < /dev/null > "$review_output_file" 2>&1 || true

@@ -3154,8 +3154,8 @@ main() {
         update_status "$loop_count" "$calls_made" "executing" "running"
         
         # Execute Claude Code
-        execute_claude_code "$loop_count"
-        local exec_result=$?
+        local exec_result=0
+        execute_claude_code "$loop_count" || exec_result=$?
         
         if [ $exec_result -eq 0 ]; then
             if consume_current_loop_permission_denial "$loop_count"; then

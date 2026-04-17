@@ -39,10 +39,22 @@ fi
 echo ""
 
 # 2. Copy BMAD files (source is at .refs/bmad/src/)
+# Note: BMAD v6.2.2+ renamed src/bmm → src/bmm-skills and src/core → src/core-skills.
+# We keep the destination names (bmad/bmm, bmad/core) stable so the rest of bmalph
+# (slash-commands, bmad-assets.ts) only has to care about the inner layout changes.
 echo "Copying BMAD files..."
 rm -rf bmad/bmm bmad/core
-cp -r .refs/bmad/src/bmm bmad/
-cp -r .refs/bmad/src/core bmad/
+if [ -d .refs/bmad/src/bmm-skills ]; then
+  cp -r .refs/bmad/src/bmm-skills bmad/bmm
+  cp -r .refs/bmad/src/core-skills bmad/core
+elif [ -d .refs/bmad/src/bmm ]; then
+  # Legacy layout (v6.2.1 and earlier)
+  cp -r .refs/bmad/src/bmm bmad/
+  cp -r .refs/bmad/src/core bmad/
+else
+  echo "Error: neither src/bmm-skills nor src/bmm found in upstream checkout"
+  exit 1
+fi
 
 # NOTE: slash-commands/ is custom bmalph content, not from upstream
 # NOTE: ralph/ is fully owned by bmalph, no upstream tracking

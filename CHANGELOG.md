@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0](https://github.com/johnkattenhorn/bmalph/compare/v2.11.0...v3.0.0) (2026-04-17)
+
+First release of the `johnkattenhorn/bmalph` fork. Fork-specific commits ahead of `LarsCowe/bmalph@main` are retained; this release adds a BMAD v6.3.0 bump and the surrounding migration work.
+
+### ⚠️ Breaking Changes
+
+* **Bundled BMAD is now v6.3.0** (commit `7f7690db`, was v6.2.0 `d1163f85`). Consumers upgrading from 2.x will inherit BMAD's breaking changes:
+  - Agent consolidation: `sm`, `qa`, `qa-automate`, `quick-flow-solo-dev`, `quick-dev`, `quick-dev-new`, `tech-spec` slash-commands removed. Capabilities moved into `dev` (Amelia).
+  - `src/bmm` → `src/bmm-skills` and `src/core` → `src/core-skills` in upstream BMAD layout (destination paths `bmad/bmm` and `bmad/core` in the fork stay stable for backwards compatibility).
+  - `spec-wip.md` singleton removed; quick-dev writes directly to `spec-{slug}.md` with a status field.
+  - `bmad-init` skill removed; config loaded directly from `_bmad/bmm/config.yaml`.
+  - Custom content installation replaced by the marketplace registry.
+* **Slash-command paths rewritten.** Agent refs now point to `_bmad/bmm/<phase>/bmad-agent-<name>/SKILL.md` (was `_bmad/bmm/agents/<name>.agent.yaml`). Workflow refs flattened under phase dirs. Core skill refs flattened (no more `skills/` / `tasks/` sub-hierarchy).
+* **`bmalph upgrade` does NOT delete slash-commands orphaned by upstream changes.** Consumers upgrading across a BMAD major must manually remove stale files in `.claude/commands/` — see [UPGRADING.md](./UPGRADING.md) for the v6.2 → v6.3 cleanup commands.
+
+### 🎁 Features
+
+* **Adaptive CSV parser in `classifyCommands`** — handles upstream BMAD's inconsistent 12- vs 13-column row emission. Phase is now read from `fields.length - 6` (stable-from-right) so missing-column rows still classify correctly.
+* **`aspire agent mcp` transport** migration path documented in [UPGRADING.md](./UPGRADING.md). Old `aspire mcp start` is deprecated in Aspire CLI 13.2.2.
+* **Fork ownership** claimed in `package.json` — `author: "John Kattenhorn"`, Lars Cowe retained as contributor. Repository/homepage/bugs URLs point to `github.com/johnkattenhorn/bmalph`.
+
+### 🐛 Bug Fixes
+
+* **`prepare` script added to `package.json`** so `npm install -g github:...` actually builds `dist/` at install time. Without this, git-based installs produce a broken CLI (missing `dist/`) and `bmalph --version` fails.
+* **`classifyCommands` skill detection** updated for v6.3.0 path conventions — matches `/bmad-agent-<name>/` for agents and `/bmad-<skill>/(workflow|SKILL).md` for workflows.
+
+### 📚 Documentation
+
+* [UPGRADING.md](./UPGRADING.md) — practical playbook for upgrading an existing bmalph-managed project. Covers global install refresh, project-level `bmalph upgrade`, version-specific cleanup (v6.2 → v6.3 orphaned commands), CLAUDE.md agent-table updates, Aspire MCP migration, PROMPT.md regeneration caveat, `_bmad-output/` tracking policy, rollback procedure, and a rough upgrade script template.
+
+### 🔧 Maintenance
+
+* `scripts/update-bundled.sh` now handles both legacy (`src/bmm` + `src/core`) and new (`src/bmm-skills` + `src/core-skills`) upstream layouts for forward/backward compatibility.
+
+### ⚠️ Known Issues
+
+* Four pre-existing `.ralphrc` permission-mode tests fail in `installer.test.ts` — the `matchesManagedPermissionVariants` function is missing at least one real template variant. Bug is upstream-inherited (present before the fork was cut). Does not affect normal install/upgrade flows; only impacts users with a very specific legacy `.ralphrc` variant. See code in `src/installer/template-files.ts:243-280`.
+
 ## [2.11.0](https://github.com/LarsCowe/bmalph/compare/v2.10.0...v2.11.0) (2026-03-24)
 
 

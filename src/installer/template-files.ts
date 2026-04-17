@@ -71,6 +71,18 @@ QUALITY_GATE_TIMEOUT="\${QUALITY_GATE_TIMEOUT:-120}"
 QUALITY_GATE_ON_COMPLETION_ONLY="\${QUALITY_GATE_ON_COMPLETION_ONLY:-false}"
 
 `;
+const SESSION_RESET_TEMPLATE_BLOCK = `# Smart context reset: start a fresh session at epic boundaries.
+# When the current story belongs to a different epic than the previous loop,
+# Ralph writes a checkpoint and starts a new session. This prevents context
+# degradation while keeping related stories in the same session.
+SESSION_RESET_ON_EPIC=true
+
+# Safety-valve: force a fresh session every N loops within the same epic.
+# Prevents context degradation in large epics with many stories.
+# Set to 0 to disable interval-based resets (rely on epic boundaries only).
+SESSION_RESET_INTERVAL=8
+
+`;
 const REVIEW_TEMPLATE_BLOCK = `# =============================================================================
 # PERIODIC CODE REVIEW
 # =============================================================================
@@ -80,7 +92,7 @@ const REVIEW_TEMPLATE_BLOCK = `# ===============================================
 # - enhanced: periodic review every REVIEW_INTERVAL loops (~10-14% more tokens)
 # - ultimate: review after every completed story (~20-30% more tokens)
 # The review agent analyzes git diffs and outputs findings for the next implementation loop.
-# Currently supported on Claude Code only.
+# Supported on all drivers (claude-code, copilot, codex, opencode, cursor).
 REVIEW_MODE="\${REVIEW_MODE:-off}"
 
 # (Legacy) Enables review — prefer REVIEW_MODE instead
@@ -88,6 +100,11 @@ REVIEW_ENABLED="\${REVIEW_ENABLED:-false}"
 
 # Number of implementation loops between review sessions (enhanced mode only)
 REVIEW_INTERVAL="\${REVIEW_INTERVAL:-5}"
+
+# Optional model override for review loops (e.g., "gpt-5.3-codex").
+# When set, injects --model into the review CLI invocation for a fresh perspective.
+# Leave empty to use the same model as implementation loops.
+REVIEW_MODEL="\${REVIEW_MODEL:-}"
 
 `;
 const PREVIOUS_REVIEW_TEMPLATE_BLOCK = `# =============================================================================
@@ -320,6 +337,38 @@ async function isRalphrcCustomized(filePath: string, platformId: string): Promis
     PREVIOUS_REVIEW_TEMPLATE_BLOCK
   );
   if (matchesManagedPermissionVariants(content, templateWithoutQGButPreviousReview)) {
+    return false;
+  }
+
+  // Check variants without the SESSION_RESET block (pre-smart-context-reset installs;
+  // added in fork commit 63f6839). Combined with each of the prior QG/REVIEW variants
+  // so a user on an older bmalph (pre-QG, pre-REVIEW, pre-SESSION_RESET) is still
+  // recognised as "managed" and eligible for automatic rewrite.
+  const templateWithoutSR = currentTemplate.replace(SESSION_RESET_TEMPLATE_BLOCK, "");
+  if (matchesManagedPermissionVariants(content, templateWithoutSR)) {
+    return false;
+  }
+
+  const templateWithoutSRAndQG = templateWithoutSR.replace(QUALITY_GATES_TEMPLATE_BLOCK, "");
+  if (matchesManagedPermissionVariants(content, templateWithoutSRAndQG)) {
+    return false;
+  }
+
+  const templateWithoutSRAndReview = templateWithoutSR.replace(REVIEW_TEMPLATE_BLOCK, "");
+  if (matchesManagedPermissionVariants(content, templateWithoutSRAndReview)) {
+    return false;
+  }
+
+  const templateWithoutSRAndQGAndReview = templateWithoutSRAndQG.replace(REVIEW_TEMPLATE_BLOCK, "");
+  if (matchesManagedPermissionVariants(content, templateWithoutSRAndQGAndReview)) {
+    return false;
+  }
+
+  const templateWithoutSRAndQGButPreviousReview = templateWithoutSRAndQG.replace(
+    REVIEW_TEMPLATE_BLOCK,
+    PREVIOUS_REVIEW_TEMPLATE_BLOCK
+  );
+  if (matchesManagedPermissionVariants(content, templateWithoutSRAndQGButPreviousReview)) {
     return false;
   }
 

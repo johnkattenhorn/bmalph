@@ -59,11 +59,15 @@ const PHASE_SECTIONS: Array<{ key: string; label: string }> = [
   { key: "anytime", label: "Utilities" },
 ];
 
-// CSV column indices for bmad-help.csv
-const CSV_COL_PHASE = 1;
+// CSV column indices for bmad-help.csv (v6.2.2+ 13-column format)
+// Canonical columns: module,skill,display-name,menu-code,description,action,args,phase,after,before,required,output-location,outputs
+// Upstream BMAD emits some rows with the args column elided when both action
+// and args are empty (12 cols instead of 13). Columns from the right are stable,
+// so phase is always fields.length - 6 (phase,after,before,required,output-location,outputs).
+const CSV_COL_SKILL = 1;
 const CSV_COL_NAME = 2;
-const CSV_COL_WORKFLOW_FILE = 5;
-const CSV_COL_DESCRIPTION = 10;
+const CSV_COL_DESCRIPTION = 4;
+const CSV_TAIL_OFFSET_PHASE = 6;
 
 const FALLBACK_PHASE = "anytime";
 
@@ -160,18 +164,21 @@ export async function classifyCommands(
   const helpCsvPath = join(projectDir, "_bmad/_config/bmad-help.csv");
   const helpCsv = await readFile(helpCsvPath, "utf-8");
 
-  // Parse CSV: build workflow-file → {phase, description} lookup
+  // Parse CSV: build skill-slug → {phase, description} lookup
+  // Multiple rows per skill (one per action/menu-code) are collapsed to the first
+  // non-"anytime" phase entry, falling back to the first row if none.
   const csvLines = helpCsv.trimEnd().split(/\r?\n/);
   const workflowLookup = new Map<string, { phase: string; description: string }>();
   for (const line of csvLines.slice(1)) {
     if (!line.trim()) continue;
     const fields = parseCsvRow(line);
-    const workflowFile = fields[CSV_COL_WORKFLOW_FILE]?.trim();
-    if (workflowFile) {
-      workflowLookup.set(workflowFile, {
-        phase: fields[CSV_COL_PHASE]?.trim() ?? FALLBACK_PHASE,
-        description: fields[CSV_COL_DESCRIPTION]?.trim() ?? fields[CSV_COL_NAME]?.trim() ?? "",
-      });
+    const skill = fields[CSV_COL_SKILL]?.trim();
+    if (!skill || skill === "_meta") continue;
+    const phase = fields[fields.length - CSV_TAIL_OFFSET_PHASE]?.trim() ?? FALLBACK_PHASE;
+    const description = fields[CSV_COL_DESCRIPTION]?.trim() ?? fields[CSV_COL_NAME]?.trim() ?? "";
+    const existing = workflowLookup.get(skill);
+    if (!existing || (existing.phase === FALLBACK_PHASE && phase !== FALLBACK_PHASE)) {
+      workflowLookup.set(skill, { phase, description });
     }
   }
 
@@ -186,9 +193,13 @@ export async function classifyCommands(
 
     // Extract _bmad/ file references from content
     const fileRefs = [...body.matchAll(/`(_bmad\/[^`]+)`/g)].map((m) => m[1]!);
-    const agentRef = fileRefs.find((ref) => ref.includes("/agents/"));
+    // Agent refs in v6.3.0 live at bmm/<phase>/bmad-agent-<name>/SKILL.md
+    const agentRef = fileRefs.find((ref) => /\/bmad-agent-[^/]+\//.test(ref));
+    // Workflow refs are any non-agent skill: bmm/<phase>/bmad-<skill>/(workflow|SKILL).md
+    // or core/bmad-<skill>/SKILL.md. Extract the skill slug (the immediate parent dir).
     const workflowRef = fileRefs.find(
-      (ref) => ref.includes("/workflows/") || ref.includes("/tasks/")
+      (ref) =>
+        ref !== agentRef && /\/bmad-[^/]+\/(workflow|SKILL)\.md$/.test(ref) && !/\/bmad-agent-/.test(ref)
     );
 
     // Classify: bmalph CLI commands
@@ -207,18 +218,11 @@ export async function classifyCommands(
       continue;
     }
 
-    // Classify: workflow/task commands (matched via CSV)
+    // Classify: workflow/task commands (matched via CSV by skill slug)
     if (workflowRef) {
-      // Try direct file-path lookup first
-      let csv = workflowLookup.get(workflowRef);
-
-      // Fallback: resolve _bmad/.../skill-name/workflow.md → skill:skill-name
-      if (!csv) {
-        const match = workflowRef.match(/\/([^/]+)\/workflow\.md$/);
-        if (match) {
-          csv = workflowLookup.get(`skill:${match[1]}`);
-        }
-      }
+      const match = workflowRef.match(/\/(bmad-[^/]+)\/(workflow|SKILL)\.md$/);
+      const skill = match?.[1];
+      const csv = skill ? workflowLookup.get(skill) : undefined;
 
       if (csv) {
         results.push({

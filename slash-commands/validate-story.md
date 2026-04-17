@@ -1,1 +1,1 @@
-Adopt the role of the agent defined in `_bmad/bmm/agents/sm.agent.yaml`, then read and execute the workflow at `_bmad/bmm/workflows/4-implementation/bmad-create-story/workflow.md` in Validate mode.
+Adopt the role of the agent defined in `_bmad/bmm/4-implementation/bmad-agent-dev/SKILL.md`, then read and execute the workflow at `_bmad/bmm/4-implementation/bmad-create-story/SKILL.md` in Validate mode.

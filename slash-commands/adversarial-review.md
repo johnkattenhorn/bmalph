@@ -1,1 +1,1 @@
-Read and execute the workflow/task at `_bmad/core/skills/bmad-review-adversarial-general/workflow.md`.
+Read and execute the workflow/task at `_bmad/core/bmad-review-adversarial-general/SKILL.md`.

@@ -1,1 +1,1 @@
-Adopt the role of the agent defined in `_bmad/bmm/agents/ux-designer.agent.yaml`, then read and execute the workflow at `_bmad/bmm/workflows/2-plan-workflows/bmad-create-ux-design/workflow.md` in Validate mode.
+Adopt the role of the agent defined in `_bmad/bmm/2-plan-workflows/bmad-agent-ux-designer/SKILL.md`, then read and execute the workflow at `_bmad/bmm/2-plan-workflows/bmad-create-ux-design/workflow.md` in Validate mode.

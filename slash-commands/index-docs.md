@@ -1,1 +1,1 @@
-Read and execute the workflow/task at `_bmad/core/skills/bmad-index-docs/workflow.md`.
+Read and execute the workflow/task at `_bmad/core/bmad-index-docs/SKILL.md`.

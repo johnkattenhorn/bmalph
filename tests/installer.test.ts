@@ -316,7 +316,9 @@ describe("installer", () => {
       await installProject(testDir);
       await expect(access(join(testDir, "_bmad/core"))).resolves.toBeUndefined();
       await expect(access(join(testDir, "_bmad/bmm"))).resolves.toBeUndefined();
-      await expect(access(join(testDir, "_bmad/bmm/agents"))).resolves.toBeUndefined();
+      await expect(
+        access(join(testDir, "_bmad/bmm/4-implementation/bmad-agent-dev/SKILL.md"))
+      ).resolves.toBeUndefined();
     });
 
     it("generates _bmad/config.yaml with all required BMAD variables", async () => {
@@ -391,7 +393,7 @@ describe("installer", () => {
     it("slash command loads BMAD help skill", async () => {
       await installProject(testDir);
       const content = await readFile(join(testDir, ".claude/commands/bmalph.md"), "utf-8");
-      expect(content).toContain("_bmad/core/skills/bmad-help/workflow.md");
+      expect(content).toContain("_bmad/core/bmad-help/SKILL.md");
     });
 
     it("slash command does not contain hardcoded phase logic", async () => {
@@ -414,8 +416,8 @@ describe("installer", () => {
       expect(files).toContain("architect.md");
       expect(files).toContain("create-prd.md");
       expect(files).toContain("sprint-planning.md");
-      expect(files).toContain("qa.md");
-      expect(files).toContain("qa-automate.md");
+      expect(files).toContain("dev.md");
+      expect(files).toContain("create-architecture.md");
       expect(files).toContain("generate-project-context.md");
     });
 
@@ -450,17 +452,18 @@ describe("installer", () => {
       expect(files).not.toContain("code-review.md");
     });
 
-    it("agent slash commands reference correct YAML paths", async () => {
+    it("agent slash commands reference correct SKILL.md paths", async () => {
       await installProject(testDir);
       const agents = [
-        { file: "analyst.md", path: "_bmad/bmm/agents/analyst.agent.yaml" },
-        { file: "architect.md", path: "_bmad/bmm/agents/architect.agent.yaml" },
-        { file: "dev.md", path: "_bmad/bmm/agents/dev.agent.yaml" },
-        { file: "pm.md", path: "_bmad/bmm/agents/pm.agent.yaml" },
-        { file: "sm.md", path: "_bmad/bmm/agents/sm.agent.yaml" },
-        { file: "qa.md", path: "_bmad/bmm/agents/qa.agent.yaml" },
-        { file: "ux-designer.md", path: "_bmad/bmm/agents/ux-designer.agent.yaml" },
-        { file: "quick-flow-solo-dev.md", path: "_bmad/bmm/agents/quick-flow-solo-dev.agent.yaml" },
+        { file: "analyst.md", path: "_bmad/bmm/1-analysis/bmad-agent-analyst/SKILL.md" },
+        { file: "tech-writer.md", path: "_bmad/bmm/1-analysis/bmad-agent-tech-writer/SKILL.md" },
+        { file: "pm.md", path: "_bmad/bmm/2-plan-workflows/bmad-agent-pm/SKILL.md" },
+        {
+          file: "ux-designer.md",
+          path: "_bmad/bmm/2-plan-workflows/bmad-agent-ux-designer/SKILL.md",
+        },
+        { file: "architect.md", path: "_bmad/bmm/3-solutioning/bmad-agent-architect/SKILL.md" },
+        { file: "dev.md", path: "_bmad/bmm/4-implementation/bmad-agent-dev/SKILL.md" },
       ];
       for (const { file, path } of agents) {
         const content = await readFile(join(testDir, ".claude/commands", file), "utf-8");
@@ -471,15 +474,14 @@ describe("installer", () => {
     it("workflow slash command adopts agent role and executes workflow", async () => {
       await installProject(testDir);
       const content = await readFile(join(testDir, ".claude/commands/create-prd.md"), "utf-8");
-      expect(content).toContain("_bmad/bmm/agents/pm.agent.yaml");
-      expect(content).toContain("_bmad/core/tasks/bmad-create-prd/workflow.md");
-      expect(content).toMatch(/[Cc]reate/);
+      expect(content).toContain("_bmad/bmm/2-plan-workflows/bmad-agent-pm/SKILL.md");
+      expect(content).toContain("_bmad/bmm/2-plan-workflows/bmad-create-prd/workflow.md");
     });
 
     it("core slash commands execute directly without agent role", async () => {
       await installProject(testDir);
       const content = await readFile(join(testDir, ".claude/commands/brainstorming.md"), "utf-8");
-      expect(content).toContain("_bmad/core/skills/bmad-brainstorming/workflow.md");
+      expect(content).toContain("_bmad/core/bmad-brainstorming/SKILL.md");
       expect(content).not.toContain("agent");
     });
   });
@@ -507,12 +509,12 @@ describe("installer", () => {
       await copyBundledAssets(testDir);
       const manifest = await readFile(join(testDir, "_bmad/_config/task-manifest.csv"), "utf-8");
       // Should contain header row
-      expect(manifest).toContain("module,phase,name,code,");
+      expect(manifest).toContain("module,skill,display-name,menu-code,");
       // Should contain core module entries
-      expect(manifest).toContain("core,anytime,Brainstorming,BSP,");
+      expect(manifest).toContain("Core,bmad-brainstorming,Brainstorming,BSP,");
       // Should contain bmm module entries
-      expect(manifest).toContain("bmm,1-analysis,Create Brief,CB,");
-      expect(manifest).toContain("bmm,3-solutioning,Create Architecture,CA,");
+      expect(manifest).toContain("BMad Method,bmad-product-brief,Create Brief,CB,");
+      expect(manifest).toContain("BMad Method,bmad-create-architecture,Create Architecture,CA,");
     });
 
     it("generates _bmad/_config/workflow-manifest.csv identical to task-manifest.csv", async () => {
@@ -531,9 +533,9 @@ describe("installer", () => {
     it("generates _bmad/_config/bmad-help.csv with combined manifest content", async () => {
       await copyBundledAssets(testDir);
       const helpCsv = await readFile(join(testDir, "_bmad/_config/bmad-help.csv"), "utf-8");
-      expect(helpCsv).toContain("module,phase,name,code,");
-      expect(helpCsv).toContain("core,anytime,Brainstorming,BSP,");
-      expect(helpCsv).toContain("bmm,1-analysis,Create Brief,CB,");
+      expect(helpCsv).toContain("module,skill,display-name,menu-code,");
+      expect(helpCsv).toContain("Core,bmad-brainstorming,Brainstorming,BSP,");
+      expect(helpCsv).toContain("BMad Method,bmad-product-brief,Create Brief,CB,");
     });
 
     it("manifests contain implementation phase workflows", async () => {
@@ -993,7 +995,7 @@ describe("installer", () => {
     it("slash command delegates to BMAD help skill", async () => {
       await installProject(testDir);
       const content = await readFile(join(testDir, ".claude/commands/bmalph.md"), "utf-8");
-      expect(content).toContain("_bmad/core/skills/bmad-help/workflow.md");
+      expect(content).toContain("_bmad/core/bmad-help/SKILL.md");
     });
 
     it("PROMPT.md template contains TDD instructions", async () => {
@@ -1876,7 +1878,7 @@ Content B.
         "utf-8"
       );
       // Body should contain the slash command content
-      expect(content).toContain("_bmad/bmm/agents/analyst.agent.yaml");
+      expect(content).toContain("_bmad/bmm/1-analysis/bmad-agent-analyst/SKILL.md");
     });
 
     it("generates skill for workflow commands", async () => {

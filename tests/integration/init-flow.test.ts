@@ -48,13 +48,15 @@ describe("init flow integration", { timeout: 30000 }, () => {
     await expect(access(join(testDir, "_bmad/core"))).resolves.toBeUndefined();
     await expect(access(join(testDir, "_bmad/bmm"))).resolves.toBeUndefined();
 
-    // Verify BMAD agent files exist
+    // Verify BMAD agent files exist (v6.3.0 phase-based layout)
     await expect(
-      access(join(testDir, "_bmad/bmm/agents/analyst.agent.yaml"))
+      access(join(testDir, "_bmad/bmm/1-analysis/bmad-agent-analyst/SKILL.md"))
     ).resolves.toBeUndefined();
-    await expect(access(join(testDir, "_bmad/bmm/agents/pm.agent.yaml"))).resolves.toBeUndefined();
     await expect(
-      access(join(testDir, "_bmad/bmm/agents/architect.agent.yaml"))
+      access(join(testDir, "_bmad/bmm/2-plan-workflows/bmad-agent-pm/SKILL.md"))
+    ).resolves.toBeUndefined();
+    await expect(
+      access(join(testDir, "_bmad/bmm/3-solutioning/bmad-agent-architect/SKILL.md"))
     ).resolves.toBeUndefined();
 
     // Verify .ralph directory with ralph loop
@@ -104,6 +106,6 @@ describe("init flow integration", { timeout: 30000 }, () => {
     await installProject(testDir);
     await expect(access(join(testDir, ".claude/commands/bmalph.md"))).resolves.toBeUndefined();
     const content = await readFile(join(testDir, ".claude/commands/bmalph.md"), "utf-8");
-    expect(content).toContain("_bmad/core/skills/bmad-help/workflow.md");
+    expect(content).toContain("_bmad/core/bmad-help/SKILL.md");
   });
 });

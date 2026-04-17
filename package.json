@@ -1,6 +1,6 @@
 {
   "name": "bmalph",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Unified AI Development Framework - BMAD phases with Ralph execution loop",
   "type": "module",
   "bin": {

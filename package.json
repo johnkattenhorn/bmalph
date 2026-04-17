@@ -39,15 +39,18 @@
     "autonomous",
     "coding-assistant"
   ],
-  "author": "Lars Cowe",
+  "author": "John Kattenhorn",
+  "contributors": [
+    "Lars Cowe (original author, https://github.com/LarsCowe/bmalph)"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/LarsCowe/bmalph.git"
+    "url": "https://github.com/johnkattenhorn/bmalph.git"
   },
-  "homepage": "https://github.com/LarsCowe/bmalph#readme",
+  "homepage": "https://github.com/johnkattenhorn/bmalph#readme",
   "bugs": {
-    "url": "https://github.com/LarsCowe/bmalph/issues"
+    "url": "https://github.com/johnkattenhorn/bmalph/issues"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -101,6 +101,20 @@ driver_build_command() {
     # Prevent interactive approval flows from blocking unattended -p loops.
     CLAUDE_CMD_ARGS+=("--permission-mode" "$resolved_permission_mode")
 
+    # MCP configuration (v3.1.0)
+    # When CLAUDE_MCP_CONFIG is set to a file path, Claude CLI loads MCP servers
+    # ONLY from that file (via --strict-mcp-config), skipping the user-level
+    # ~/.claude.json. Point at an empty config (e.g. '{"mcpServers":{}}') to
+    # disable all MCP servers for Ralph loops — saves ~7s of startup overhead
+    # per invocation and eliminates hangs caused by slow remote MCP handshakes.
+    if [[ -n "$CLAUDE_MCP_CONFIG" ]]; then
+        if [[ -f "$CLAUDE_MCP_CONFIG" ]]; then
+            CLAUDE_CMD_ARGS+=("--mcp-config" "$CLAUDE_MCP_CONFIG" "--strict-mcp-config")
+        else
+            echo "WARN: CLAUDE_MCP_CONFIG=$CLAUDE_MCP_CONFIG does not exist; falling back to user-level MCP config" >&2
+        fi
+    fi
+
     # Allowed tools
     if [[ -n "$CLAUDE_ALLOWED_TOOLS" ]]; then
         CLAUDE_CMD_ARGS+=("--allowedTools")

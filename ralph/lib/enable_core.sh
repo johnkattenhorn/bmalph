@@ -690,6 +690,24 @@ CLAUDE_TIMEOUT_MINUTES=15
 CLAUDE_OUTPUT_FORMAT="json"
 WRITE_TIMEOUT_MINUTES=8
 
+# v3.1.0 — MCP config override. Point at a file with only the MCP servers
+# Ralph actually needs (or '{"mcpServers":{}}' for none). Skips the user-level
+# ~/.claude.json which may include slow/remote connectors that hang startup.
+# Leave unset to keep default behaviour.
+# CLAUDE_MCP_CONFIG=".ralph/mcp-empty.json"
+
+# v3.1.0 — Pre-loop zombie reaper. Space-separated patterns matched with
+# `pgrep -f` before each loop starts. Kills orphaned build/runtime children
+# left behind when a prior loop timed out. Highly recommended for projects
+# whose toolchains spawn long-running workers or services.
+#
+# Examples by ecosystem (pick patterns that match your own tooling):
+#   .NET:    PRE_LOOP_REAP_PATTERNS="MSBuild.dll dotnet.run dotnet.watch"
+#   JVM:     PRE_LOOP_REAP_PATTERNS="gradle.daemon kotlin.compile.daemon"
+#   Node:    PRE_LOOP_REAP_PATTERNS="node.*--watch jest.*--watch vite"
+#   Go:      PRE_LOOP_REAP_PATTERNS="go.test go.run"
+#   Python:  PRE_LOOP_REAP_PATTERNS="pytest uvicorn celery.worker"
+
 # Tool permissions
 # Comma-separated list of allowed tools
 ALLOWED_TOOLS="Write,Read,Edit,Bash(git *),Bash(npm *),Bash(pytest)"

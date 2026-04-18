@@ -63,6 +63,8 @@ Environment variables > Ralph config file > script defaults
 | `CLAUDE_OUTPUT_FORMAT` | `json` | Output format (json or text) |
 | `ALLOWED_TOOLS` | `Write,Read,Edit,MultiEdit,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,EnterPlanMode,ExitPlanMode,NotebookEdit,Bash` | Claude Code only. Ignored by codex, cursor, and copilot |
 | `CLAUDE_PERMISSION_MODE` | `bypassPermissions` | Claude Code only. Prevents interactive approval workflows from blocking unattended loops without relying on beta headers |
+| `CLAUDE_MCP_CONFIG` | _(unset)_ | Claude Code only (v3.1.0+). Path to an MCP config file. When set, invokes `claude` with `--mcp-config $CLAUDE_MCP_CONFIG --strict-mcp-config`, bypassing the user-level `~/.claude.json`. Point at `{"mcpServers":{}}` to disable all MCP servers for Ralph loops (saves ~7s startup per invocation; eliminates hangs from slow remote connectors). |
+| `PRE_LOOP_REAP_PATTERNS` | _(unset)_ | Space-separated `pgrep -f` patterns (v3.1.0+). Before each loop starts, Ralph SIGKILLs any matching processes that aren't descendants of itself. Use to reap orphaned build/runtime children from prior timed-out loops. Examples by ecosystem: `"MSBuild.dll dotnet.run"` (.NET), `"gradle.daemon"` (JVM), `"jest.*--watch vite"` (Node), `"pytest uvicorn"` (Python). |
 | `PERMISSION_DENIAL_MODE` | `continue` | How Ralph responds to permission denials: continue, halt, or threshold |
 | `SESSION_CONTINUITY` | `true` | Maintain context across loops |
 | `SESSION_EXPIRY_HOURS` | `24` | Session expiration time |

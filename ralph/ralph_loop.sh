@@ -40,7 +40,7 @@ source "$SCRIPT_DIR/lib/metrics.sh"
 
 # Allowlist of known .ralphrc config keys (#76)
 # Space-delimited string (avoids declare -A scoping issues when sourced)
-RALPHRC_ALLOWED_KEYS=" PLATFORM_DRIVER PROJECT_NAME PROJECT_TYPE MAX_CALLS_PER_HOUR CLAUDE_TIMEOUT_MINUTES CLAUDE_OUTPUT_FORMAT WRITE_TIMEOUT_MINUTES ALLOWED_TOOLS CLAUDE_PERMISSION_MODE PERMISSION_DENIAL_MODE SESSION_CONTINUITY SESSION_EXPIRY_HOURS TASK_SOURCES GITHUB_TASK_LABEL BEADS_FILTER CB_NO_PROGRESS_THRESHOLD CB_SAME_ERROR_THRESHOLD CB_OUTPUT_DECLINE_THRESHOLD CB_READ_ONLY_TIMEOUT_THRESHOLD CB_COOLDOWN_MINUTES CB_AUTO_RESET TEST_COMMAND QUALITY_GATES QUALITY_GATE_MODE QUALITY_GATE_TIMEOUT QUALITY_GATE_ON_COMPLETION_ONLY REVIEW_MODE REVIEW_ENABLED REVIEW_INTERVAL REVIEW_MODEL CLAUDE_MIN_VERSION RALPH_VERBOSE PROMPT_FILE FIX_PLAN_FILE AGENT_FILE "
+RALPHRC_ALLOWED_KEYS=" PLATFORM_DRIVER PROJECT_NAME PROJECT_TYPE MAX_CALLS_PER_HOUR CLAUDE_TIMEOUT_MINUTES CLAUDE_OUTPUT_FORMAT WRITE_TIMEOUT_MINUTES ALLOWED_TOOLS CLAUDE_PERMISSION_MODE PERMISSION_DENIAL_MODE CLAUDE_MCP_CONFIG PRE_LOOP_REAP_PATTERNS SESSION_CONTINUITY SESSION_EXPIRY_HOURS TASK_SOURCES GITHUB_TASK_LABEL BEADS_FILTER CB_NO_PROGRESS_THRESHOLD CB_SAME_ERROR_THRESHOLD CB_OUTPUT_DECLINE_THRESHOLD CB_READ_ONLY_TIMEOUT_THRESHOLD CB_COOLDOWN_MINUTES CB_AUTO_RESET TEST_COMMAND QUALITY_GATES QUALITY_GATE_MODE QUALITY_GATE_TIMEOUT QUALITY_GATE_ON_COMPLETION_ONLY REVIEW_MODE REVIEW_ENABLED REVIEW_INTERVAL REVIEW_MODEL CLAUDE_MIN_VERSION RALPH_VERBOSE PROMPT_FILE FIX_PLAN_FILE AGENT_FILE "
 
 # parse_ralphrc - Safely parse .ralphrc as key=value config (#76)
 # Rejects command substitution ($(), backticks). Only sets allowlisted keys.
@@ -190,6 +190,13 @@ QUALITY_GATE_MODE="${QUALITY_GATE_MODE:-warn}"
 QUALITY_GATE_TIMEOUT="${QUALITY_GATE_TIMEOUT:-120}"
 QUALITY_GATE_ON_COMPLETION_ONLY="${QUALITY_GATE_ON_COMPLETION_ONLY:-false}"
 QUALITY_GATE_RESULTS_FILE="$RALPH_DIR/.quality_gate_results"
+
+# Pre-loop zombie reaper (v3.1.0)
+# Space-separated patterns matched against `pgrep -f` BEFORE each loop starts.
+# Protects against child-process accumulation when timeouts kill Claude mid-build —
+# orphaned dotnet/MSBuild/aspire/etc. get reparented to init and saturate the host.
+# Leave empty to disable. Patterns are joined with `|` and passed to `pgrep -f`.
+PRE_LOOP_REAP_PATTERNS="${PRE_LOOP_REAP_PATTERNS:-}"
 
 # Periodic code review configuration
 REVIEW_ENABLED="${REVIEW_ENABLED:-false}"
@@ -576,6 +583,44 @@ setup_tmux_session() {
     tmux attach-session -t "$session_name"
 
     exit 0
+}
+
+# Pre-loop zombie reaper (v3.1.0)
+# Kills orphaned child processes left over from previous timed-out loops.
+# When Claude hits its --timeout wall mid-build, it gets SIGKILL'd but its
+# children (dotnet build, MSBuild workers with /nodeReuse:true, aspire run
+# trees, etc.) get reparented to init and keep running — accumulating load
+# over many loops until the host can no longer start new Claude sessions.
+# Triggered by PRE_LOOP_REAP_PATTERNS in .ralphrc. Idempotent.
+reap_zombie_processes() {
+    [[ -z "$PRE_LOOP_REAP_PATTERNS" ]] && return 0
+
+    local pattern_regex
+    pattern_regex=$(echo "$PRE_LOOP_REAP_PATTERNS" | tr ' ' '|' | sed 's/|\+/|/g;s/^|//;s/|$//')
+    [[ -z "$pattern_regex" ]] && return 0
+
+    # Exclude this script and its children so we don't commit suicide.
+    local self_pid=$$
+    local reaped_pids=()
+    local pid
+    while IFS= read -r pid; do
+        [[ -z "$pid" ]] && continue
+        [[ "$pid" == "$self_pid" ]] && continue
+        # Skip descendants of this ralph_loop process
+        local parent_chain="" p="$pid"
+        while [[ -n "$p" && "$p" != "1" && "$p" != "0" ]]; do
+            if [[ "$p" == "$self_pid" ]]; then parent_chain="self"; break; fi
+            p=$(ps -p "$p" -o ppid= 2>/dev/null | tr -d ' ')
+        done
+        [[ "$parent_chain" == "self" ]] && continue
+        reaped_pids+=("$pid")
+    done < <(pgrep -f "$pattern_regex" 2>/dev/null)
+
+    if [[ ${#reaped_pids[@]} -gt 0 ]]; then
+        log_status "INFO" "Reaping ${#reaped_pids[@]} zombie process(es) matching pattern"
+        kill -9 "${reaped_pids[@]}" 2>/dev/null || true
+        sleep 1
+    fi
 }
 
 # Initialize call tracking
@@ -3117,7 +3162,24 @@ main() {
 
         log_status "INFO" "Loop #$loop_count - calling init_call_tracking..."
         init_call_tracking
-        
+
+        # v3.1.0: reap orphaned build children before starting a new loop.
+        # Prevents resource exhaustion from timed-out previous loops.
+        reap_zombie_processes
+
+        # v3.1.0: stale review-findings guard. If the most recent commit is a
+        # fix(review) commit, the findings it addressed have already been
+        # applied — don't re-enter review-fix mode for the same file. The next
+        # review cycle will regenerate findings if real issues remain.
+        if [[ -f "$REVIEW_FINDINGS_FILE" ]]; then
+            local head_msg
+            head_msg=$(git -C "$(dirname "$RALPH_DIR")" log -1 --pretty=%s 2>/dev/null || echo "")
+            if [[ "$head_msg" == fix\(review\):* ]]; then
+                log_status "INFO" "Discarding stale $REVIEW_FINDINGS_FILE — HEAD is already a fix(review) commit"
+                rm -f "$REVIEW_FINDINGS_FILE"
+            fi
+        fi
+
         log_status "LOOP" "=== Starting Loop #$loop_count ==="
         
         # Check circuit breaker before attempting execution

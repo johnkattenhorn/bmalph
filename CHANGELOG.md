@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0](https://github.com/johnkattenhorn/bmalph/compare/v3.0.2...v3.1.0) (2026-04-18)
+
+Loop stability release. Addresses two failure modes observed during long autonomous runs on projects with heavy build toolchains: Claude-CLI startup hangs caused by zombie child processes accumulating from prior timed-out loops, and phantom review-fix loops caused by stale `.review_findings.json` left on disk.
+
+### 🎁 Features
+
+* **`PRE_LOOP_REAP_PATTERNS` — pre-loop zombie reaper.** New `.ralphrc` knob. Space-separated `pgrep -f` patterns; each loop starts by SIGKILL'ing any matching processes that are not descendants of the Ralph loop itself. Protects against child-process accumulation when a `--timeout` kills Claude mid-build — orphaned toolchain workers (MSBuild nodes, Gradle daemons, Node watchers, Python processes, etc.) get reparented to init and keep running. Over ~40 autonomous loops this was observed to push host load avg above 3.5 and cause 0-byte-output 40-minute timeouts (Claude CLI could no longer start new sessions). Default is unset (no-op). Examples by ecosystem: `MSBuild.dll dotnet.run`, `gradle.daemon`, `jest.*--watch vite`, `pytest uvicorn`.
+* **`CLAUDE_MCP_CONFIG` — scoped MCP loading for Ralph loops.** New `.ralphrc` knob. Path to an MCP config file; when set, invokes `claude` with `--mcp-config $CLAUDE_MCP_CONFIG --strict-mcp-config`, bypassing the user-level `~/.claude.json`. Point at `{"mcpServers":{}}` to disable all MCP servers for Ralph loops — saves ~7s of startup overhead per invocation (measured: 10.8s → 3.9s for a minimal `claude --print` call) and eliminates hangs caused by slow or broken remote MCP handshakes. Default is unset (falls back to user-level config, preserving prior behaviour).
+* **Stale `.review_findings.json` guard.** At the start of each loop, if the file exists AND the repo's HEAD commit subject begins with `fix(review):`, Ralph deletes the findings file before reading it. The prior loop already handled those findings; the next review cycle will regenerate them if real issues remain. Prevents a failure mode where a successful review-fix loop left the file on disk (against the expected flow), causing subsequent loops to re-enter review-fix mode for already-addressed issues until timeout.
+
+### 🔧 Maintenance
+
+* `ralph/RALPH-REFERENCE.md` — added reference entries for `CLAUDE_MCP_CONFIG` and `PRE_LOOP_REAP_PATTERNS`.
+* `ralph/lib/enable_core.sh` — `ralph enable` template now emits commented-out examples of both new knobs so new projects can opt in by uncommenting.
+* Zero breaking changes — both new features are opt-in and inert when unset.
+
+---
+
+## [3.0.2](https://github.com/johnkattenhorn/bmalph/compare/v3.0.1...v3.0.2) (2026-04-17)
+
+### 🐛 Bug Fixes
+
+* Raise review-findings JSON size cap in `ralph_loop.sh` from 5000 to 20000 bytes. On projects with verbose review prompts (many concerns × detailed per-finding JSON), the 5000-byte cap silently truncated `REVIEW_FINDINGS` blocks — observed losing 3-of-7 findings across a single run. Submitted upstream as PR [#167](https://github.com/LarsCowe/bmalph/pull/167).
+
+## [3.0.1](https://github.com/johnkattenhorn/bmalph/compare/v3.0.0...v3.0.1) (2026-04-17)
+
+### 🐛 Bug Fixes
+
+* Fix `.ralphrc` variant handling when a project ships `ALLOWED_TOOLS` but the runtime expects `CLAUDE_ALLOWED_TOOLS` (or vice versa). Previous logic left one of the two empty, silently dropping the allowlist.
+
+---
+
 ## [3.0.0](https://github.com/johnkattenhorn/bmalph/compare/v2.11.0...v3.0.0) (2026-04-17)
 
 First release of the `johnkattenhorn/bmalph` fork. Fork-specific commits ahead of `LarsCowe/bmalph@main` are retained; this release adds a BMAD v6.3.0 bump and the surrounding migration work.

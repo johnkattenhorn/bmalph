@@ -54,6 +54,8 @@ Environment variables > Ralph config file > script defaults
 
 ### Available Settings
 
+> ⚠️ **`.ralphrc` is loaded once at bmalph startup.** Changes to this file made while `bmalph run` is already running **do NOT take effect** — you must stop the loop and start a new `bmalph run` for edits here to apply. This catches people out most often with `SESSION_CONTINUITY`, `CLAUDE_MCP_CONFIG`, and `PRE_LOOP_REAP_PATTERNS`. Environment variables exported before `bmalph run` starts take precedence over file values.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PROJECT_NAME` | `my-project` | Project name for prompts and logging |
